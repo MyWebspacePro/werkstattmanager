@@ -1,0 +1,5 @@
+# Adresse aus der Umgebungsvariable APP_DOMAIN (in .env setzen).
+# Mit echter Domain → automatisches HTTPS via Let's Encrypt.
+{$APP_DOMAIN} {
+	reverse_proxy web:80
+}

@@ -1,0 +1,13 @@
+node_modules
+dist
+build
+coverage
+.git
+.zcode
+backups
+uploads
+data
+*.log
+.env
+.env.local
+apps/web/dist
