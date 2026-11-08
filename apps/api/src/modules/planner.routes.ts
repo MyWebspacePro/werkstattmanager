@@ -15,6 +15,7 @@ const appointmentFields = z.object({
   notes: z.string().optional(),
   status: z.enum(["REQUESTED", "CONFIRMED", "IN_PROGRESS", "DONE", "CANCELLED"]).default("CONFIRMED"),
   requiredSkill: z.coerce.number().int().min(0).max(3).default(0),
+  override: z.boolean().optional(), // Chef: Doppelbelegung erlauben (protokolliert)
 });
 
 const appointmentSchema = appointmentFields.refine((d) => d.end > d.start, {
@@ -22,7 +23,7 @@ const appointmentSchema = appointmentFields.refine((d) => d.end > d.start, {
   path: ["end"],
 });
 
-const updateSchema = appointmentFields.partial().refine((d) => !d.start || !d.end || d.end > d.start, {
+const updateSchema = appointmentFields.partial().extend({ override: z.boolean().optional() }).refine((d) => !d.start || !d.end || d.end > d.start, {
   message: "Ende muss nach Start liegen",
   path: ["end"],
 });
@@ -104,10 +105,14 @@ export async function plannerRoutes(app: FastifyInstance): Promise<void> {
     const end = data.end ?? existing.end;
     const resourceId = data.resourceId !== undefined ? data.resourceId : existing.resourceId ?? undefined;
     const mechanicId = data.mechanicId !== undefined ? data.mechanicId : existing.mechanicId ?? undefined;
-    if (await hasConflict(resourceId, start, end, id) || await hasConflict(mechanicId, start, end, id)) {
-      return reply.code(409).send({ error: "Bühne oder Person ist in diesem Zeitraum bereits belegt" });
+    const conflict = await hasConflict(resourceId, start, end, id) || await hasConflict(mechanicId, start, end, id);
+    const override = (data as { override?: boolean }).override === true && req.user!.role === "ADMIN";
+    if (conflict && !override) {
+      return reply.code(409).send({ error: "Bühne oder Person ist in diesem Zeitraum bereits belegt", canOverride: req.user!.role === "ADMIN" });
     }
-    const appointment = await prisma.appointment.update({ where: { id }, data: { ...data, resourceId: resourceId ?? null, mechanicId: mechanicId ?? null } });
+    if (conflict && override) await audit(req.user!.id, "OVERRIDE", "Appointment", id, { conflict: true });
+    const { override: _ov, ...dataClean } = data as typeof data & { override?: boolean };
+    const appointment = await prisma.appointment.update({ where: { id }, data: { ...dataClean, resourceId: resourceId ?? null, mechanicId: mechanicId ?? null } });
     await audit(req.user!.id, "UPDATE", "Appointment", id, { status: appointment.status });
     return appointment;
   });

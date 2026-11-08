@@ -20,6 +20,7 @@ const orderBody = z.object({
   customerId: z.string().min(1),
   vehicleId: z.string().min(1),
   appointmentId: z.string().optional(),
+  override: z.boolean().optional(), // Chef-Sperre übersteuern (wird protokolliert)
   resourceId: z.string().nullable().optional(),
   requiredSkill: z.coerce.number().int().min(1).max(3).default(1),
   reportedIssues: z.string().optional(),
@@ -28,7 +29,7 @@ const orderBody = z.object({
 });
 
 const statusValues = ["OPEN", "PARTS_ORDERED", "IN_PROGRESS", "READY", "INVOICED", "PAID", "CANCELLED"] as const;
-const statusSchema = z.object({ status: z.enum(statusValues) });
+const statusSchema = z.object({ status: z.enum(statusValues), override: z.boolean().optional() });
 
 export const orderInclude = {
   lines: { orderBy: { position: "asc" as const } },
@@ -131,14 +132,18 @@ export async function workOrderRoutes(app: FastifyInstance): Promise<void> {
     const body = orderBody.partial().parse(req.body);
     const existing = await prisma.workOrder.findUnique({ where: { id }, include: { lines: true } });
     if (!existing) return reply.code(404).send({ error: "Auftrag nicht gefunden" });
-    // Statusschutz: fakturierte/abgeschlossene Aufträge sind gesperrt (Rechnung wäre sonst ein falscher Snapshot)
+    // Statusschutz: fakturierte/abgeschlossene Aufträge sind gesperrt — Chef darf übersteuern (wird protokolliert)
+    const override = body.override === true && req.user!.role === "ADMIN";
     if (["INVOICED", "PAID", "CANCELLED"].includes(existing.status)) {
-      return reply.code(409).send({ error: `Auftrag ist ${existing.status} und damit gesperrt — Korrekturen nur über Kreditnota` });
+      if (!override) {
+        return reply.code(409).send({ error: `Auftrag ist ${existing.status} und damit gesperrt — Korrekturen nur über Kreditnota`, canOverride: req.user!.role === "ADMIN" });
+      }
+      await audit(req.user!.id, "OVERRIDE", "WorkOrder", id, { lockedAs: existing.status });
     }
     const settings = await prisma.setting.findUniqueOrThrow({ where: { id: 1 } });
 
     await prisma.$transaction(async (tx) => {
-      const { lines, ...data } = body;
+      const { lines, override: _override, ...data } = body;
       await tx.workOrder.update({ where: { id }, data });
       if (lines) {
         // Entfernte PART-Positionen zurück ins Lager
@@ -182,14 +187,15 @@ export async function workOrderRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const body = z.object({
       minutes: z.coerce.number().int().min(1).max(24 * 60),
+      override: z.boolean().optional(),
       note: z.string().optional(),
       userId: z.string().optional(), // nur ADMIN darf für andere buchen
       startedAt: z.coerce.date().optional(),
     }).parse(req.body);
     const order = await prisma.workOrder.findUnique({ where: { id } });
     if (!order) return reply.code(404).send({ error: "Auftrag nicht gefunden" });
-    if (["INVOICED", "PAID", "CANCELLED"].includes(order.status)) {
-      return reply.code(409).send({ error: `Auftrag ist ${order.status} — keine Zeitbuchung mehr möglich` });
+    if (["INVOICED", "PAID", "CANCELLED"].includes(order.status) && !(body.override === true && req.user!.role === "ADMIN")) {
+      return reply.code(409).send({ error: `Auftrag ist ${order.status} — keine Zeitbuchung mehr möglich`, canOverride: req.user!.role === "ADMIN" });
     }
     const entry = await prisma.timeEntry.create({
       data: {
@@ -221,13 +227,14 @@ export async function workOrderRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const body = z.object({
       resourceId: z.string().min(1),
+      override: z.boolean().optional(),
       plannedMinutes: z.coerce.number().int().min(1).max(24 * 60).optional(),
       note: z.string().optional(),
     }).parse(req.body);
     const order = await prisma.workOrder.findUnique({ where: { id } });
     if (!order) return reply.code(404).send({ error: "Auftrag nicht gefunden" });
-    if (["INVOICED", "PAID", "CANCELLED"].includes(order.status)) {
-      return reply.code(409).send({ error: `Auftrag ist ${order.status} — keine Zuweisung mehr möglich` });
+    if (["INVOICED", "PAID", "CANCELLED"].includes(order.status) && !(body.override === true && req.user!.role === "ADMIN")) {
+      return reply.code(409).send({ error: `Auftrag ist ${order.status} — keine Zuweisung mehr möglich`, canOverride: req.user!.role === "ADMIN" });
     }
     const resource = await prisma.resource.findUnique({ where: { id: body.resourceId } });
     if (!resource) return reply.code(404).send({ error: "Ressource nicht gefunden" });
@@ -251,15 +258,17 @@ export async function workOrderRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch("/workorders/:id/status", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const { status } = statusSchema.parse(req.body);
+    const { status, override: wantOverride } = statusSchema.parse(req.body);
     const current = await prisma.workOrder.findUnique({ where: { id } });
     if (!current) return reply.code(404).send({ error: "Auftrag nicht gefunden" });
     // Reopening blockieren: nur INVOICED → PAID ist erlaubt, sonst nichts aus abgeschlossenen Zuständen raus
     if (["INVOICED", "PAID", "CANCELLED"].includes(current.status)) {
       const allowed = current.status === "INVOICED" && status === "PAID";
-      if (!allowed) {
-        return reply.code(409).send({ error: `Auftrag ist ${current.status} — Status kann nur über Kreditnota/Storno geändert werden` });
+      const override = wantOverride === true && req.user!.role === "ADMIN";
+      if (!allowed && !override) {
+        return reply.code(409).send({ error: `Auftrag ist ${current.status} — Status kann nur über Kreditnota/Storno geändert werden`, canOverride: req.user!.role === "ADMIN" });
       }
+      if (!allowed && override) await audit(req.user!.id, "OVERRIDE", "WorkOrder", id, { from: current.status, to: status });
     }
     const closing = status === "INVOICED" || status === "PAID" || status === "CANCELLED";
     const order = await prisma.workOrder.update({

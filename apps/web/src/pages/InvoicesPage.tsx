@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiDownload } from "../lib/api.js";
 import { useAuth } from "../lib/auth.js";
+import { confirmOverride } from "../lib/override.js";
 import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, formatCHF, formatDate } from "../components/ui.js";
 
 interface Invoice {
@@ -41,13 +42,14 @@ export default function InvoicesPage() {
   });
 
   const remindMutation = useMutation({
-    mutationFn: () => api<{ fee: number; sentTo: string | null; warning?: string }>(`/invoices/${detail!.id}/remind`, { method: "POST" }),
+    mutationFn: (opts?: { override?: boolean }) => api<{ fee: number; sentTo: string | null; warning?: string }>(`/invoices/${detail!.id}/remind`, { method: "POST", body: JSON.stringify({ override: opts?.override }) }),
     onSuccess: (r) => {
       setMsg(r.sentTo
         ? `${r.fee > 0 ? `Mahnung mit CHF ${r.fee.toFixed(2)} Gebühr` : "Mahnung"} erfasst und per E-Mail gesendet an ${r.sentTo}`
         : "Mahnung erfasst — kein E-Mail-Versand möglich (siehe Hinweis)");
       refresh();
     },
+    onError: (err) => confirmOverride(err, () => remindMutation.mutate({ override: true })),
   });
 
   const sendMutation = useMutation({
@@ -145,7 +147,7 @@ export default function InvoicesPage() {
                 {sendMutation.isPending ? "Sendet…" : "✉️ Per E-Mail senden"}
               </Button>
               <Button variant="secondary" onClick={() => { setPayForm((f) => ({ ...f, amount: openAmount })); setPayOpen(true); }}>💰 Zahlung erfassen</Button>
-              <Button variant="secondary" onClick={() => remindMutation.mutate()} disabled={detail.reminderLevel >= 3 || ["PAID", "CANCELLED", "CREDITED"].includes(detail.status)}>
+              <Button variant="secondary" onClick={() => remindMutation.mutate()} disabled={["PAID", "CANCELLED", "CREDITED"].includes(detail.status) || (detail.reminderLevel >= 3 && user?.role !== "ADMIN")}>
                 🔔 Mahnung ({Math.min(detail.reminderLevel + 1, 3)}.)
               </Button>
               {detail.reminderLevel > 0 && (

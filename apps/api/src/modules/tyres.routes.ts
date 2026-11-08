@@ -69,9 +69,12 @@ export async function tyreRoutes(app: FastifyInstance): Promise<void> {
   // Saison-Gebühr des eingeliagerten Satzes fakturieren (eigene Rechnung, DRAFT)
   app.post("/tyres/:id/invoice", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const override = (req.body as { override?: boolean } | undefined)?.override === true && req.user!.role === "ADMIN";
     const set = await prisma.tyreSet.findUnique({ where: { id }, include: { vehicle: { select: { licensePlate: true, id: true } } } });
     if (!set) return reply.code(404).send({ error: "Reifensatz nicht gefunden" });
-    if (set.billedAt) return reply.code(409).send({ error: "Gebühr wurde bereits fakturiert" });
+    if (set.billedAt && !override) {
+      return reply.code(409).send({ error: "Gebühr wurde bereits fakturiert", canOverride: req.user!.role === "ADMIN" });
+    }
     if (Number(set.seasonFee) <= 0) return reply.code(400).send({ error: "Satz hat keine Lagergebühr hinterlegt" });
 
     const settings = await prisma.setting.findUniqueOrThrow({ where: { id: 1 } });
@@ -94,7 +97,7 @@ export async function tyreRoutes(app: FastifyInstance): Promise<void> {
       },
     });
     await prisma.tyreSet.update({ where: { id }, data: { billedAt: new Date() } });
-    await audit(req.user!.id, "CREATE", "Invoice", invoice.id, { number: invoice.number, tyreSet: set.slotCode });
+    await audit(req.user!.id, "CREATE", "Invoice", invoice.id, { number: invoice.number, tyreSet: set.slotCode, ...(set.billedAt ? { overrideDoppel: true } : {}) });
     return invoice;
   });
 

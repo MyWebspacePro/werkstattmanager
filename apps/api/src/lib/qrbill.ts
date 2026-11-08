@@ -185,7 +185,7 @@ export async function buildReminderPdf(
   // Kopf
   page.fontSize(16).font("Helvetica-Bold").text(settings.companyName, left, y);
   page.fontSize(14).font("Helvetica-Bold").fillColor("#b00020").text(
-    level >= 3 ? "3. Mahnung — Letzte Mahnung" : `${level}. Mahnung`,
+    level === 3 ? "3. Mahnung — Letzte Mahnung" : `${level}. Mahnung${level > 3 ? " (Inkasso-Vorbereitung)" : ""}`,
     340, y, { width: 215, align: "right" }
   ).fillColor("#000");
   y += 22;

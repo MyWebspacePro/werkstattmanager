@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
 import { Badge, Button, Card, ErrorMsg, Field, Input, Modal, Select, Textarea } from "../components/ui.js";
 import { SKILL_LABELS, SKILL_SHORT, SKILL_LEVELS } from "../lib/skills.js";
+import { confirmOverride } from "../lib/override.js";
+import { useAuth } from "../lib/auth.js";
 
 interface Resource { id: string; name: string; type: "LIFT" | "MECHANIC" | "BAY"; active: boolean; jobTitle?: string | null; skillLevel: number }
 interface Vehicle { id: string; licensePlate: string; brand: string; model: string; customerId: string; customer?: { firstName?: string | null; lastName?: string | null; company?: string | null } }
@@ -29,6 +31,8 @@ function startOfWeek(d: Date): Date {
 
 export default function PlannerPage() {
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const [bypassSkill, setBypassSkill] = useState(false);
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Appointment | null>(null);
@@ -53,6 +57,7 @@ export default function PlannerPage() {
       qc.invalidateQueries({ queryKey: ["appointments"] });
       setModalOpen(false);
     },
+    onError: (err, vars) => confirmOverride(err, () => saveMutation.mutate({ ...(vars as Record<string, unknown>), override: true })),
   });
 
   const cancelMutation = useMutation({
@@ -194,7 +199,7 @@ export default function PlannerPage() {
           <Field label={form.requiredSkill > 0 ? `Mechaniker (min. ${SKILL_SHORT[form.requiredSkill]})` : "Mechaniker"}>
             <Select value={form.mechanicId} onChange={(e) => setForm((f) => ({ ...f, mechanicId: e.target.value }))}>
               <option value="">— keine —</option>
-              {(resources ?? []).filter((r) => r.type === "MECHANIC" && r.skillLevel >= form.requiredSkill).map((r) => (
+              {(resources ?? []).filter((r) => r.type === "MECHANIC" && (user?.role === "ADMIN" && bypassSkill ? true : r.skillLevel >= form.requiredSkill)).map((r) => (
                 <option key={r.id} value={r.id}>{r.name}{r.jobTitle ? ` — ${r.jobTitle}` : ""}</option>
               ))}
             </Select>

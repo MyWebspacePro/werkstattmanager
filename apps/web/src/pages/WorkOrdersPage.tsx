@@ -4,6 +4,7 @@ import { api, apiDownload } from "../lib/api.js";
 import { useAuth } from "../lib/auth.js";
 import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, Textarea, formatCHF } from "../components/ui.js";
 import { SKILL_LABELS, SKILL_SHORT } from "../lib/skills.js";
+import { confirmOverride } from "../lib/override.js";
 
 interface Line { type: "LABOR" | "PART" | "EXTERNAL" | "FLAT"; description: string; qty: number; unit: string; unitPrice: number; vatRate: number; partId?: string }
 interface WorkOrder {
@@ -87,12 +88,13 @@ export default function WorkOrdersPage() {
   };
 
   const saveMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (opts?: { override?: boolean }) => {
       // Leere FK-Felder sauber abschliessen («» würde FK-Verletzungen werfen)
       const { appointmentId, ...formRest } = form;
       const body: Record<string, unknown> = { ...formRest, lines };
       if (!body.resourceId) body.resourceId = null;
       if (!selected && appointmentId) body.appointmentId = appointmentId;
+      if (opts?.override) body.override = true;
       return selected
         ? api(`/workorders/${selected.id}`, { method: "PUT", body: JSON.stringify(body) })
         : api("/workorders", { method: "POST", body: JSON.stringify(body) });
@@ -102,28 +104,35 @@ export default function WorkOrdersPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     },
+    onError: (err) => confirmOverride(err, () => saveMutation.mutate({ override: true })),
   });
 
   const statusMutation = useMutation({
-    mutationFn: (payload: { id: string; status: string }) => api(`/workorders/${payload.id}/status`, { method: "PATCH", body: JSON.stringify({ status: payload.status }) }),
+    mutationFn: (payload: { id: string; status: string; override?: boolean }) => api(`/workorders/${payload.id}/status`, { method: "PATCH", body: JSON.stringify({ status: payload.status, override: payload.override }) }),
     onSuccess: refresh,
+    onError: (err, vars) => confirmOverride(err, () => statusMutation.mutate({ ...vars, override: true })),
   });
 
   const assignMutation = useMutation({
-    mutationFn: (body: { resourceId: string; plannedMinutes?: number; note?: string }) =>
+    mutationFn: (body: { resourceId: string; plannedMinutes?: number; note?: string; override?: boolean }) =>
       api(`/workorders/${selected!.id}/assignments`, { method: "POST", body: JSON.stringify(body) }),
     onSuccess: () => { setAssignForm({ resourceId: "", plannedMinutes: 30, note: "" }); if (selected) openDetail(selected.id); },
+    onError: (err, vars) => confirmOverride(err, () => assignMutation.mutate({ ...vars, override: true })),
   });
   const assignDeleteMutation = useMutation({
     mutationFn: (assignmentId: string) => api(`/workorders/${selected!.id}/assignments/${assignmentId}`, { method: "DELETE" }),
     onSuccess: () => { if (selected) openDetail(selected.id); },
   });
   const [assignForm, setAssignForm] = useState({ resourceId: "", plannedMinutes: 30, note: "" });
+  const [bypassSkill, setBypassSkill] = useState(false);
+  const skillOpen = user?.role === "ADMIN" && bypassSkill;
+  const skillFilter = (r: { type: string; skillLevel: number }) => r.type === "MECHANIC" && (skillOpen || r.skillLevel >= form.requiredSkill);
 
   const timeMutation = useMutation({
-    mutationFn: (body: { minutes: number; note: string; userId?: string }) =>
+    mutationFn: (body: { minutes: number; note: string; userId?: string; override?: boolean }) =>
       api(`/workorders/${selected!.id}/time`, { method: "POST", body: JSON.stringify({ ...body, userId: body.userId || undefined }) }),
     onSuccess: () => { setTimeForm({ minutes: 30, note: "", userId: "" }); if (selected) openDetail(selected.id); },
+    onError: (err, vars) => confirmOverride(err, () => timeMutation.mutate({ ...vars, override: true })),
   });
   const timeDeleteMutation = useMutation({
     mutationFn: (entryId: string) => api(`/workorders/${selected!.id}/time/${entryId}`, { method: "DELETE" }),
@@ -292,12 +301,18 @@ export default function WorkOrdersPage() {
           <Field label="Zugewiesen an">
             <Select value={form.resourceId} onChange={(e) => setForm((f) => ({ ...f, resourceId: e.target.value }))}>
               <option value="">— noch offen —</option>
-              {(resources ?? []).filter((r) => r.type === "MECHANIC" && r.skillLevel >= form.requiredSkill).map((r) => (
+              {(resources ?? []).filter(skillFilter).map((r) => (
                 <option key={r.id} value={r.id}>{r.name}{r.jobTitle ? ` — ${r.jobTitle}` : ""}</option>
               ))}
             </Select>
           </Field>
         </div>
+        {user?.role === "ADMIN" && (
+          <label className="flex items-center gap-2 text-xs text-slate-500 -mt-2 mb-2">
+            <input type="checkbox" className="w-4 h-4" checked={bypassSkill} onChange={(e) => setBypassSkill(e.target.checked)} />
+            Qualifikationsfilter umgehen (Chef-Entscheid — z.B. Lernender unter Aufsicht)
+          </label>
+        )}
         <div className="mt-4">
           <Field label="Kundenauftrag / Mängelrüge"><Textarea rows={2} value={form.reportedIssues} onChange={(e) => setForm((f) => ({ ...f, reportedIssues: e.target.value }))} placeholder="Was meldet der Kunde?" /></Field>
         </div>
@@ -360,8 +375,8 @@ export default function WorkOrdersPage() {
                 <Field label="Person">
                   <Select value={assignForm.resourceId} onChange={(e) => setAssignForm((f) => ({ ...f, resourceId: e.target.value }))}>
                     <option value="">— wählen —</option>
-                    {(resources ?? []).filter((r) => r.type === "MECHANIC" && r.skillLevel >= form.requiredSkill).map((r) => (
-                      <option key={r.id} value={r.id}>{r.name}{r.jobTitle ? ` — ${r.jobTitle}` : ""}</option>
+                    {(resources ?? []).filter(skillFilter).map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}{r.jobTitle ? ` — ${r.jobTitle}` : ""}{!skillOpen && r.skillLevel > form.requiredSkill ? ` [überqualifiziert]` : ""}</option>
                     ))}
                   </Select>
                 </Field>
