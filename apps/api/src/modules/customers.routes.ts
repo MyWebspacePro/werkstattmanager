@@ -97,9 +97,10 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/customers", async (req) => {
     const { emailMarketingConsent, consentSource, vehicle, ...data } = customerSchema.parse(req.body);
+    const clean = { ...data, firstName: data.firstName || null, lastName: data.lastName || null, company: data.company || null, phone: data.phone || null, street: data.street || null, zip: data.zip || null, city: data.city || null, notes: data.notes || null };
     const customer = await prisma.customer.create({
       data: {
-        ...data,
+        ...clean,
         email: data.email || null,
         ...(vehicle ? { vehicles: { create: vehicle } } : {}),
         consents: emailMarketingConsent
@@ -124,11 +125,12 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
   app.put("/customers/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     const { emailMarketingConsent, consentSource, vehicle: _vehicle, ...data } = customerSchema.parse(req.body);
+    const clean = { ...data, firstName: data.firstName || null, lastName: data.lastName || null, company: data.company || null, phone: data.phone || null, street: data.street || null, zip: data.zip || null, city: data.city || null, notes: data.notes || null };
     const existing = await prisma.customer.findUnique({ where: { id }, include: { consents: true } });
     if (!existing) return reply.code(404).send({ error: "Kunde nicht gefunden" });
 
     const result = await prisma.$transaction(async (tx) => {
-      const customer = await tx.customer.update({ where: { id }, data: { ...data, email: data.email || null } });
+      const customer = await tx.customer.update({ where: { id }, data: { ...clean, email: data.email || null } });
       if (emailMarketingConsent !== undefined) {
         const current = existing.consents.find((c) => c.type === "EMAIL_MARKETING");
         if (emailMarketingConsent && !current?.granted) {

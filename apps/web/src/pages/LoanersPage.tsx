@@ -67,7 +67,7 @@ export default function LoanersPage() {
                 </div>
                 {openLoan ? (
                   <div className="mt-3 text-sm bg-yellow-50 rounded-lg p-2">
-                    Verliehen an <strong>{openLoan.customer.company ?? `${openLoan.customer.firstName ?? ""} ${openLoan.customer.lastName ?? ""}`.trim()}</strong> · fällig {formatDate(openLoan.dueAt)}
+                    Verliehen an <strong>{openLoan.customer.company || `${openLoan.customer.firstName ?? ""} ${openLoan.customer.lastName ?? ""}`.trim()}</strong> · fällig {formatDate(openLoan.dueAt)}
                   </div>
                 ) : null}
                 <div className="flex gap-2 mt-3">
@@ -111,7 +111,7 @@ export default function LoanersPage() {
             <select className="w-full px-3 min-h-11 border border-slate-300 rounded-lg" value={loanForm.customerId} onChange={(e) => setLoanForm((f) => ({ ...f, customerId: e.target.value }))}>
               <option value="">— wählen —</option>
               {(customers?.items ?? []).map((c) => (
-                <option key={c.id} value={c.id}>{c.company ?? `${c.firstName ?? ""} ${c.lastName ?? ""}`}</option>
+                <option key={c.id} value={c.id}>{c.company || `${c.firstName ?? ""} ${c.lastName ?? ""}`}</option>
               ))}
             </select>
           </Field>

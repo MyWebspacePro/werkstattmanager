@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
 import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, Textarea, formatCHF } from "../components/ui.js";
+import { BrandField, ModelField } from "../components/VehicleInputs.js";
 
 interface Purchase {
   id: string; brand: string; model: string; year?: number | null; mileage?: number | null; vin?: string | null;
@@ -88,7 +89,7 @@ export default function SalesPage() {
               {data.items.map((p) => (
                 <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
                   <td className="py-2 font-medium">{p.brand} {p.model} <span className="text-slate-400">({p.year ?? "?"})</span></td>
-                  <td>{p.seller.company ?? `${p.seller.firstName ?? ""} ${p.seller.lastName ?? ""}`.trim()}</td>
+                  <td>{p.seller.company || `${p.seller.firstName ?? ""} ${p.seller.lastName ?? ""}`.trim()}</td>
                   <td>{p.purchasePrice ? formatCHF(p.purchasePrice) : "—"}</td>
                   <td>{formatCHF(p.prepCosts)}</td>
                   <td>{p.salePrice ? formatCHF(p.salePrice) : "—"}</td>
@@ -113,13 +114,13 @@ export default function SalesPage() {
               <Select value={form.sellerId} onChange={(e) => setForm((f) => ({ ...f, sellerId: e.target.value }))}>
                 <option value="">— wählen —</option>
                 {(customers?.items ?? []).map((c) => (
-                  <option key={c.id} value={c.id}>{c.company ?? `${c.firstName ?? ""} ${c.lastName ?? ""}`}</option>
+                  <option key={c.id} value={c.id}>{c.company || `${c.firstName ?? ""} ${c.lastName ?? ""}`}</option>
                 ))}
               </Select>
             </Field>
           )}
-          <Field label="Marke"><Input value={form.brand} onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))} /></Field>
-          <Field label="Modell"><Input value={form.model} onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))} /></Field>
+          <BrandField value={form.brand} onChange={(v) => setForm((f) => ({ ...f, brand: v }))} />
+          <ModelField brand={form.brand} value={form.model} onChange={(v) => setForm((f) => ({ ...f, model: v }))} />
           <div className="grid grid-cols-2 gap-3">
             <Field label="Jahrgang"><Input type="number" value={form.year} onChange={(e) => setForm((f) => ({ ...f, year: e.target.value }))} /></Field>
             <Field label="KM"><Input type="number" value={form.mileage} onChange={(e) => setForm((f) => ({ ...f, mileage: e.target.value }))} /></Field>

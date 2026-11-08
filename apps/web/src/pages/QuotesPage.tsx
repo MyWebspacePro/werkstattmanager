@@ -76,7 +76,7 @@ export default function QuotesPage() {
             </thead>
             <tbody>
               {data.items.map((qt) => {
-                const cust = qt.customer.company ?? `${qt.customer.firstName ?? ""} ${qt.customer.lastName ?? ""}`.trim();
+                const cust = qt.customer.company || `${qt.customer.firstName ?? ""} ${qt.customer.lastName ?? ""}`.trim();
                 return (
                   <tr key={qt.id} className="border-b border-slate-50 hover:bg-slate-50">
                     <td className="py-2 font-mono">{qt.number}</td>

@@ -26,7 +26,7 @@ export default function CustomerDetailPage() {
   if (isLoading) return <div className="text-slate-500">Lädt…</div>;
   if (error) return <ErrorMsg error={error} />;
   if (!c) return null;
-  const name = c.company ?? `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim();
+  const name = c.company || `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim();
   const marketing = c.consents.find((x) => x.type === "EMAIL_MARKETING");
 
   return (

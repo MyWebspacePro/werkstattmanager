@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiDownload } from "../lib/api.js";
 import { Badge, Button, Card, ErrorMsg, Field, Input, Modal, Textarea, formatCHF, formatDate } from "../components/ui.js";
+import { BrandField, ModelField } from "../components/VehicleInputs.js";
 
 interface VehicleDetail {
   id: string; licensePlate: string; vin?: string | null; brand: string; model: string;
@@ -53,7 +54,7 @@ export default function VehicleDetailPage() {
   if (isLoading) return <div className="text-slate-500">Lädt…</div>;
   if (error) return <ErrorMsg error={error} />;
   if (!v) return null;
-  const cust = v.customer.company ?? `${v.customer.firstName ?? ""} ${v.customer.lastName ?? ""}`.trim();
+  const cust = v.customer.company || `${v.customer.firstName ?? ""} ${v.customer.lastName ?? ""}`.trim();
   const set = (key: keyof typeof emptyForm) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
   return (
@@ -148,8 +149,8 @@ export default function VehicleDetailPage() {
         {save.error && <ErrorMsg error={save.error} />}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Kennzeichen"><Input value={form.licensePlate} onChange={set("licensePlate")} required /></Field>
-          <Field label="Marke"><Input value={form.brand} onChange={set("brand")} required /></Field>
-          <Field label="Modell"><Input value={form.model} onChange={set("model")} required /></Field>
+          <BrandField value={form.brand} onChange={(v2) => setForm((f) => ({ ...f, brand: v2 }))} required />
+          <ModelField brand={form.brand} value={form.model} onChange={(v2) => setForm((f) => ({ ...f, model: v2 }))} required />
           <Field label="Jahr"><Input type="number" value={form.year} onChange={set("year")} min={1950} max={2100} /></Field>
           <Field label="KM-Stand"><Input type="number" value={form.mileage} onChange={set("mileage")} min={0} /></Field>
           <Field label="Treibstoff"><Input value={form.fuel} onChange={set("fuel")} placeholder="Benzin / Diesel / Elektro…" /></Field>

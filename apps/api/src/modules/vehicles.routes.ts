@@ -6,10 +6,10 @@ import { authGuard } from "../plugins/auth.js";
 
 const vehicleSchema = z.object({
   customerId: z.string().min(1),
-  licensePlate: z.string().min(1),
+  licensePlate: z.string().trim().min(1),
   vin: z.string().optional(),
-  brand: z.string().min(1),
-  model: z.string().min(1),
+  brand: z.string().trim().min(1),
+  model: z.string().trim().min(1),
   year: z.coerce.number().int().min(1950).max(2100).optional(),
   mileage: z.coerce.number().int().min(0).optional(),
   fuel: z.string().optional(),

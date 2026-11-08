@@ -95,7 +95,7 @@ export default function PlannerPage() {
       return d.getFullYear() === day.getFullYear() && d.getMonth() === day.getMonth() && d.getDate() === day.getDate();
     });
 
-  const custName = (a: Appointment) => a.customer?.company ?? (`${a.customer?.firstName ?? ""} ${a.customer?.lastName ?? ""}`.trim() || "Kunde");
+  const custName = (a: Appointment) => a.customer?.company || (`${a.customer?.firstName ?? ""} ${a.customer?.lastName ?? ""}`.trim() || "Kunde");
 
   return (
     <div className="space-y-4">
@@ -156,7 +156,7 @@ export default function PlannerPage() {
               setForm((f) => ({ ...f, vehicleId: e.target.value, customerId: v?.customerId ?? f.customerId }));
             }}>
               {(vehicles?.items ?? []).map((v) => (
-                <option key={v.id} value={v.id}>{v.licensePlate} — {v.brand} {v.model}{v.customer ? ` (${v.customer.company ?? v.customer.lastName})` : ""}</option>
+                <option key={v.id} value={v.id}>{v.licensePlate} — {v.brand} {v.model}{v.customer ? ` (${v.customer.company || v.customer.lastName})` : ""}</option>
               ))}
             </Select>
           </Field>

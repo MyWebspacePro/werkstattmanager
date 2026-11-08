@@ -61,7 +61,7 @@ export default function DashboardPage() {
               {data.openWorkOrders.map((wo) => (
                 <tr key={wo.id} className="border-b border-slate-50">
                   <td className="py-2 font-mono">{wo.number}</td>
-                  <td>{wo.customer.company ?? wo.customer.lastName}</td>
+                  <td>{wo.customer.company || wo.customer.lastName}</td>
                   <td>{wo.vehicle.licensePlate}</td>
                   <td><Badge color={woStatusColor[wo.status] ?? "slate"}>{wo.status}</Badge></td>
                 </tr>

@@ -56,7 +56,7 @@ export default function TyreHotelPage() {
               {data.items.map((t) => (
                 <tr key={t.id} className="border-b border-slate-50">
                   <td className="py-2 font-mono font-semibold">{t.slotCode}</td>
-                  <td>{t.customer.company ?? `${t.customer.firstName ?? ""} ${t.customer.lastName ?? ""}`.trim()}</td>
+                  <td>{t.customer.company || `${t.customer.firstName ?? ""} ${t.customer.lastName ?? ""}`.trim()}</td>
                   <td>{t.vehicle?.licensePlate ?? "—"}</td>
                   <td><Badge color={t.season === "WINTER" ? "blue" : t.season === "SUMMER" ? "yellow" : "slate"}>{seasonLabel[t.season]}</Badge></td>
                   <td>{t.inches ?? "—"}</td>

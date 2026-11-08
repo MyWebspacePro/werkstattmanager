@@ -114,7 +114,7 @@ export default function InvoicesPage() {
                 <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => { setDetail(inv); setMsg(""); }}>
                   <td className="py-2 font-mono">{inv.number}</td>
                   <td>{formatDate(inv.date)}</td>
-                  <td>{inv.customer.company ?? `${inv.customer.firstName ?? ""} ${inv.customer.lastName ?? ""}`.trim()}</td>
+                  <td>{inv.customer.company || `${inv.customer.firstName ?? ""} ${inv.customer.lastName ?? ""}`.trim()}</td>
                   <td>{formatCHF(inv.total)}</td>
                   <td className={Number(inv.total) - Number(inv.paidTotal) > 0 ? "text-red-600 font-medium" : "text-slate-400"}>{formatCHF(Number(inv.total) - Number(inv.paidTotal))}</td>
                   <td><Badge color={statusColor[inv.status] ?? "slate"}>{statusLabel[inv.status] ?? inv.status}{inv.reminderLevel ? ` (M${inv.reminderLevel})` : ""}</Badge></td>
@@ -131,7 +131,7 @@ export default function InvoicesPage() {
         {detail && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-2 text-sm">
-              <div><span className="text-slate-500">Kunde:</span> {detail.customer.company ?? `${detail.customer.firstName ?? ""} ${detail.customer.lastName ?? ""}`.trim()}</div>
+              <div><span className="text-slate-500">Kunde:</span> {detail.customer.company || `${detail.customer.firstName ?? ""} ${detail.customer.lastName ?? ""}`.trim()}</div>
               <div className="text-right"><Badge color={statusColor[detail.status] ?? "slate"}>{statusLabel[detail.status]}</Badge></div>
               <div><span className="text-slate-500">Datum:</span> {formatDate(detail.date)} · <span className="text-slate-500">Fällig:</span> {formatDate(detail.dueDate)}</div>
               {detail.vehicle && <div><span className="text-slate-500">Kontrollschild:</span> {detail.vehicle.licensePlate}</div>}

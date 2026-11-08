@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
 import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, Textarea } from "../components/ui.js";
+import { BrandField, ModelField } from "../components/VehicleInputs.js";
 
 interface Customer {
   id: string; type: "PRIVATE" | "COMPANY" | "FLEET"; firstName?: string | null; lastName?: string | null;
@@ -70,7 +71,7 @@ export default function CustomersPage() {
     setEditing(c);
     setForm({
       ...emptyForm,
-      type: c.type, firstName: c.firstName ?? "", lastName: c.lastName ?? "", company: c.company ?? "",
+      type: c.type, firstName: c.firstName ?? "", lastName: c.lastName ?? "", company: c.company || "",
       email: c.email ?? "", phone: c.phone ?? "", street: c.street ?? "", zip: c.zip ?? "",
       city: c.city ?? "", notes: c.notes ?? "",
       emailMarketingConsent: c.consents.some((x) => x.type === "EMAIL_MARKETING" && x.granted),
@@ -123,7 +124,7 @@ export default function CustomersPage() {
             </thead>
             <tbody>
               {data.items.map((c) => {
-                const name = c.company ?? `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim();
+                const name = c.company || `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim();
                 return (
                   <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
                     <td className="py-2 font-medium">
@@ -186,8 +187,8 @@ export default function CustomersPage() {
               <p className="text-sm font-medium text-slate-700 mb-3">Fahrzeug (optional — Kennzeichen genügt nicht ohne Marke/Modell)</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 <Field label="Kennzeichen"><Input value={form.vehiclePlate} onChange={set("vehiclePlate")} placeholder="SH 123 456" /></Field>
-                <Field label="Marke"><Input value={form.vehicleBrand} onChange={set("vehicleBrand")} required={withVehicle} /></Field>
-                <Field label="Modell"><Input value={form.vehicleModel} onChange={set("vehicleModel")} required={withVehicle} /></Field>
+                <BrandField value={form.vehicleBrand} onChange={(v) => setForm((f) => ({ ...f, vehicleBrand: v }))} required={withVehicle} />
+                <ModelField brand={form.vehicleBrand} value={form.vehicleModel} onChange={(v) => setForm((f) => ({ ...f, vehicleModel: v }))} required={withVehicle} />
                 <Field label="Jahr"><Input type="number" value={form.vehicleYear} onChange={set("vehicleYear")} min={1950} max={2100} /></Field>
                 <Field label="KM-Stand"><Input type="number" value={form.vehicleMileage} onChange={set("vehicleMileage")} min={0} /></Field>
               </div>
@@ -212,13 +213,13 @@ export default function CustomersPage() {
         </form>
       </Modal>
 
-      <Modal open={!!vehicleModalFor} title={vehicleModalFor ? `Fahrzeug hinzufügen — ${vehicleModalFor.company ?? `${vehicleModalFor.firstName ?? ""} ${vehicleModalFor.lastName ?? ""}`.trim()}` : ""} onClose={() => setVehicleModalFor(null)}>
+      <Modal open={!!vehicleModalFor} title={vehicleModalFor ? `Fahrzeug hinzufügen — ${vehicleModalFor.company || `${vehicleModalFor.firstName ?? ""} ${vehicleModalFor.lastName ?? ""}`.trim()}` : ""} onClose={() => setVehicleModalFor(null)}>
         {vehicleMutation.error && <ErrorMsg error={vehicleMutation.error} />}
         <form onSubmit={(e) => { e.preventDefault(); vehicleMutation.mutate(vehicleModalFor!.id); }}>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Kennzeichen"><Input value={vform.licensePlate} onChange={setV("licensePlate")} required placeholder="SH 123 456" /></Field>
-            <Field label="Marke"><Input value={vform.brand} onChange={setV("brand")} required /></Field>
-            <Field label="Modell"><Input value={vform.model} onChange={setV("model")} required /></Field>
+            <BrandField value={vform.brand} onChange={(v) => setVform((f) => ({ ...f, brand: v }))} required />
+            <ModelField brand={vform.brand} value={vform.model} onChange={(v) => setVform((f) => ({ ...f, model: v }))} required />
             <Field label="Jahr"><Input type="number" value={vform.year} onChange={setV("year")} min={1950} max={2100} /></Field>
             <Field label="KM-Stand"><Input type="number" value={vform.mileage} onChange={setV("mileage")} min={0} /></Field>
           </div>

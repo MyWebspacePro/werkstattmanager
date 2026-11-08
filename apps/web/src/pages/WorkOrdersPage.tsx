@@ -109,7 +109,7 @@ export default function WorkOrdersPage() {
   const printOrderSheet = () => {
     const w = window.open("", "_blank", "width=800,height=900");
     if (!w || !selected) return;
-    const cust = selected.customer.company ?? `${selected.customer.firstName ?? ""} ${selected.customer.lastName ?? ""}`.trim();
+    const cust = selected.customer.company || `${selected.customer.firstName ?? ""} ${selected.customer.lastName ?? ""}`.trim();
     const rows = lines.map((l, i) => `<tr><td>${i + 1}</td><td>${l.description}</td><td>${l.qty} ${l.unit}</td><td>${l.type === "LABOR" ? "Arbeit" : l.type === "PART" ? "Teil" : l.type === "EXTERNAL" ? "Fremd" : "Pausch."}</td></tr>`).join("");
     w.document.write(`<!doctype html><html><head><title>Auftrag ${selected.number}</title>
       <style>body{font-family:-apple-system,Arial,sans-serif;padding:40px;color:#111}h1{font-size:20px}table{width:100%;border-collapse:collapse;margin-top:16px}td,th{border:1px solid #999;padding:8px;text-align:left}.meta{margin-top:8px;color:#333}</style></head><body>
@@ -153,7 +153,7 @@ export default function WorkOrdersPage() {
               {data.items.map((wo) => (
                 <tr key={wo.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => openDetail(wo.id)}>
                   <td className="py-2 font-mono">{wo.number}</td>
-                  <td>{wo.customer.company ?? `${wo.customer.firstName ?? ""} ${wo.customer.lastName ?? ""}`.trim()}</td>
+                  <td>{wo.customer.company || `${wo.customer.firstName ?? ""} ${wo.customer.lastName ?? ""}`.trim()}</td>
                   <td>{wo.vehicle.licensePlate}</td>
                   <td>{formatCHF(wo.actualNet)}</td>
                   <td><Badge color={statusColor[wo.status] ?? "slate"}>{statusLabel[wo.status] ?? wo.status}</Badge></td>
@@ -189,7 +189,7 @@ export default function WorkOrdersPage() {
               {(customers?.items ?? []).flatMap((c) =>
                 c.vehicles.map((v) => (
                   <option key={v.id} value={v.id}>
-                    {v.licensePlate} — {c.company ?? `${c.firstName ?? ""} ${c.lastName ?? ""}`}
+                    {v.licensePlate} — {c.company || `${c.firstName ?? ""} ${c.lastName ?? ""}`}
                   </option>
                 ))
               )}
