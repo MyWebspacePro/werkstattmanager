@@ -58,9 +58,15 @@ Node 22 · npm workspaces · `.env` liegt am Root UND in `apps/api/` (Prisma/tsx
 - Update-Prozedur + Notfall-Wiederherstellung: `VPS-UEBERGABE.md` (auch für Hermes)
 - `deploy.sh` = Ein-Befehl-Setup für leere Server · Git-Push-Hänger → `GIT_TERMINAL_PROMPT=0 git push https://x-access-token:$(gh auth token)@github.com/MyWebspacePro/werkstattmanager.git main`
 
+**Auth-Verwaltung (2026-11-08, deployed):**
+- «Mein Passwort ändern» in Einstellungen (alle Rollen, altes Passwort nötig, min. 8 Zeichen) — `PUT /api/auth/password`
+- Benutzerverwaltung in Einstellungen (nur Chef): anlegen, Rolle, aktiv/gesperrt, Passwort-Reset — `/api/users`
+- Schutzmechanismen: Selbst-Deaktivierung blockiert, letzter aktiver Admin geschützt; AuditLog-Einträge `PASSWORD_CHANGE`/`PASSWORD_RESET`
+- Verifiziert lokal (API-Smoke 8 Checks + UI-E2E inkl. Rollen-Gating) und in Prod deployed (Health 200, Route 401-guarded, Login OK)
+
 ## 6. Offene Punkte / Nächste Schritte
 
-1. **Passwörter ändern** (Prod!) — und: Passwort-Ändern-Funktion + Nutzerverwaltung fehlt noch im UI (Backend: User-Modell vorhanden)
+1. **Passwörter in PROD ändern** — Funktion ist jetzt im UI (Einstellungen → «Mein Passwort ändern»); Nutzer kann es selbst im Browser machen, Passwörter gehören nicht in den Chat
 2. **SMTP konfigurieren**: `nano /opt/werkstattmanager/.env` auf VPS (IONOS-Mailbox) → Restart → E-Mail-Versand testen (lokal via Mailhog verifiziert)
 3. Buchhaltungs-Export: Zielprogramm der Werkstatt klären (aktuell KMU-CSV, semikolon-getrennt)
 4. Phase 3 (aus KONZEPT.md): Website-Widget (Reifen-Anfrage/Termin), Versicherungs-Direktabrechnung, camt.053, TecDoc, FR/IT-Übersetzungen
