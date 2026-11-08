@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
-import { confirmOverride } from "../lib/override.js";
 import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, formatCHF, formatDate } from "../components/ui.js";
 
 interface TyreSet {
@@ -33,13 +32,12 @@ export default function TyreHotelPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["tyres"] }); qc.invalidateQueries({ queryKey: ["tyre-reminders"] }); },
   });
   const invoiceMutation = useMutation({
-    mutationFn: (payload: { id: string; override?: boolean }) => api<{ number: string }>(`/tyres/${payload.id}/invoice`, { method: "POST", body: JSON.stringify({ override: payload.override }) }),
+    mutationFn: (payload: { id: string }) => api<{ number: string }>(`/tyres/${payload.id}/invoice`, { method: "POST" }),
     onSuccess: (inv) => {
       qc.invalidateQueries({ queryKey: ["tyres"] });
       setMsg(`Rechnung ${inv.number} erstellt (Entwurf — unter Rechnungen versenden)`);
       setTimeout(() => setMsg(null), 5000);
     },
-    onError: (err, vars) => confirmOverride(err, () => invoiceMutation.mutate({ ...vars, override: true })),
   });
   const [msg, setMsg] = useState<string | null>(null);
 

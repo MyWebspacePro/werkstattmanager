@@ -26,7 +26,8 @@ const customerSchema = z
     notes: z.string().optional(),
     emailMarketingConsent: z.boolean().optional(),
     consentSource: z.string().optional(),
-    vehicle: vehicleInputSchema.optional(),
+    vehicle: vehicleInputSchema.optional(),      // Kurzform (erstes Fahrzeug)
+    vehicles: z.array(vehicleInputSchema).optional(), // Mehrere Fahrzeuge auf einmal (Zweitwagen)
   })
   .superRefine((data, ctx) => {
     if (data.type === "PRIVATE" && !(data.firstName ?? "").trim() && !(data.lastName ?? "").trim()) {
@@ -96,13 +97,14 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/customers", async (req) => {
-    const { emailMarketingConsent, consentSource, vehicle, ...data } = customerSchema.parse(req.body);
+    const { emailMarketingConsent, consentSource, vehicle, vehicles, ...data } = customerSchema.parse(req.body);
+    const allVehicles = [...(vehicle ? [vehicle] : []), ...(vehicles ?? [])];
     const clean = { ...data, firstName: data.firstName || null, lastName: data.lastName || null, company: data.company || null, phone: data.phone || null, street: data.street || null, zip: data.zip || null, city: data.city || null, notes: data.notes || null };
     const customer = await prisma.customer.create({
       data: {
         ...clean,
         email: data.email || null,
-        ...(vehicle ? { vehicles: { create: vehicle } } : {}),
+        ...(allVehicles.length ? { vehicles: { create: allVehicles } } : {}),
         consents: emailMarketingConsent
           ? {
               create: {
@@ -117,14 +119,14 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
     });
     await audit(req.user!.id, "CREATE", "Customer", customer.id, {
       name: customer.company ?? customer.lastName,
-      ...(vehicle ? { plate: vehicle.licensePlate } : {}),
+      ...(allVehicles.length ? { plates: allVehicles.map((v) => v.licensePlate) } : {}),
     });
     return customer;
   });
 
   app.put("/customers/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const { emailMarketingConsent, consentSource, vehicle: _vehicle, ...data } = customerSchema.parse(req.body);
+    const { emailMarketingConsent, consentSource, vehicle: _vehicle, vehicles: _vehicles, ...data } = customerSchema.parse(req.body);
     const clean = { ...data, firstName: data.firstName || null, lastName: data.lastName || null, company: data.company || null, phone: data.phone || null, street: data.street || null, zip: data.zip || null, city: data.city || null, notes: data.notes || null };
     const existing = await prisma.customer.findUnique({ where: { id }, include: { consents: true } });
     if (!existing) return reply.code(404).send({ error: "Kunde nicht gefunden" });

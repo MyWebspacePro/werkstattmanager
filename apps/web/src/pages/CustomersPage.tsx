@@ -13,10 +13,11 @@ interface Customer {
   consents: { type: string; granted: boolean }[];
 }
 
+const emptyVehicleRow = { plate: "", brand: "", model: "", year: "", mileage: "" };
 const emptyForm = {
   type: "PRIVATE" as "PRIVATE" | "COMPANY" | "FLEET", firstName: "", lastName: "", company: "", email: "", phone: "",
   street: "", zip: "", city: "", notes: "", emailMarketingConsent: false, consentSource: "",
-  vehiclePlate: "", vehicleBrand: "", vehicleModel: "", vehicleYear: "", vehicleMileage: "",
+  vehicles: [{ ...emptyVehicleRow }],
 };
 
 const emptyVehicle = { licensePlate: "", brand: "", model: "", year: "", mileage: "" };
@@ -36,7 +37,7 @@ export default function CustomersPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (body: typeof emptyForm & { vehicle?: Record<string, unknown> }) =>
+    mutationFn: (body: Omit<typeof emptyForm, "vehicles"> & { vehicles?: Array<{ licensePlate: string; brand: string; model: string; year?: number; mileage?: number }> }) =>
       editing
         ? api(`/customers/${editing.id}`, { method: "PUT", body: JSON.stringify(body) })
         : api("/customers", { method: "POST", body: JSON.stringify(body) }),
@@ -86,20 +87,22 @@ export default function CustomersPage() {
 
   const submitCustomer = (e: React.FormEvent) => {
     e.preventDefault();
-    const vehicle = form.vehiclePlate.trim()
-      ? {
-          licensePlate: form.vehiclePlate.trim(),
-          brand: form.vehicleBrand.trim(),
-          model: form.vehicleModel.trim(),
-          ...(form.vehicleYear ? { year: Number(form.vehicleYear) } : {}),
-          ...(form.vehicleMileage ? { mileage: Number(form.vehicleMileage) } : {}),
-        }
+    const vehicles = !editing
+      ? form.vehicles
+          .filter((v) => v.plate.trim())
+          .map((v) => ({
+            licensePlate: v.plate.trim(),
+            brand: v.brand.trim(),
+            model: v.model.trim(),
+            ...(v.year ? { year: Number(v.year) } : {}),
+            ...(v.mileage ? { mileage: Number(v.mileage) } : {}),
+          }))
       : undefined;
-    saveMutation.mutate({ ...form, vehicle });
+    const { vehicles: _formVehicles, ...rest } = form;
+    saveMutation.mutate({ ...rest, ...(vehicles ? { vehicles } : {}) });
   };
 
   const isPrivate = form.type === "PRIVATE";
-  const withVehicle = !editing && !!form.vehiclePlate.trim();
 
   return (
     <div className="space-y-4">
@@ -184,14 +187,30 @@ export default function CustomersPage() {
 
           {!editing && (
             <div className="mt-4 border-t pt-4">
-              <p className="text-sm font-medium text-slate-700 mb-3">Fahrzeug (optional — Kennzeichen genügt nicht ohne Marke/Modell)</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                <Field label="Kennzeichen"><Input value={form.vehiclePlate} onChange={set("vehiclePlate")} placeholder="SH 123 456" /></Field>
-                <BrandField value={form.vehicleBrand} onChange={(v) => setForm((f) => ({ ...f, vehicleBrand: v }))} required={withVehicle} />
-                <ModelField brand={form.vehicleBrand} value={form.vehicleModel} onChange={(v) => setForm((f) => ({ ...f, vehicleModel: v }))} required={withVehicle} />
-                <Field label="Jahr"><Input type="number" value={form.vehicleYear} onChange={set("vehicleYear")} min={1950} max={2100} /></Field>
-                <Field label="KM-Stand"><Input type="number" value={form.vehicleMileage} onChange={set("vehicleMileage")} min={0} /></Field>
+              <p className="text-sm font-medium text-slate-700 mb-1">Fahrzeuge (optional — auch Zweitwagen gleich miterfassen)</p>
+              <p className="text-xs text-slate-400 mb-3">Zeile leer lassen = kein Fahrzeug. Mit Kennzeichen sind Marke und Modell Pflicht.</p>
+              <div className="space-y-3">
+                {form.vehicles.map((v, i) => {
+                  const active = !!v.plate.trim();
+                  const setV = (key: keyof typeof emptyVehicleRow) => (e: { target: { value: string } }) =>
+                    setForm((f) => ({ ...f, vehicles: f.vehicles.map((row, j) => (j === i ? { ...row, [key]: e.target.value } : row)) }));
+                  return (
+                    <div key={i} className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
+                      <Field label={i === 0 ? "Kennzeichen" : ""}>
+                        <Input value={v.plate} onChange={setV("plate")} placeholder="SH 123 456" />
+                      </Field>
+                      <BrandField value={v.brand} onChange={(val) => setForm((f) => ({ ...f, vehicles: f.vehicles.map((row, j) => (j === i ? { ...row, brand: val } : row)) }))} required={active} />
+                      <ModelField brand={v.brand} value={v.model} onChange={(val) => setForm((f) => ({ ...f, vehicles: f.vehicles.map((row, j) => (j === i ? { ...row, model: val } : row)) }))} required={active} />
+                      <Field label={i === 0 ? "Jahr" : ""}><Input type="number" value={v.year} onChange={setV("year")} min={1950} max={2100} /></Field>
+                      <Field label={i === 0 ? "KM-Stand" : ""}><Input type="number" value={v.mileage} onChange={setV("mileage")} min={0} /></Field>
+                      <Button type="button" variant="ghost" className="justify-center" onClick={() => setForm((f) => ({ ...f, vehicles: f.vehicles.filter((_, j) => j !== i) }))} disabled={form.vehicles.length === 1}>✕</Button>
+                    </div>
+                  );
+                })}
               </div>
+              <Button type="button" variant="secondary" className="mt-3" onClick={() => setForm((f) => ({ ...f, vehicles: [...f.vehicles, { ...emptyVehicleRow }] }))}>
+                + Weiteres Fahrzeug
+              </Button>
             </div>
           )}
 

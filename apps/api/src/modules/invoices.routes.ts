@@ -163,11 +163,9 @@ export async function invoiceRoutes(app: FastifyInstance): Promise<void> {
     if (["PAID", "CANCELLED", "CREDITED"].includes(invoice.status)) {
       return reply.code(400).send({ error: "Rechnung ist bereits beglichen/annulliert" });
     }
-    const override = ((req.body ?? {}) as { override?: boolean }).override === true && req.user!.role === "ADMIN";
-    if (invoice.reminderLevel >= 3 && !override) {
-      return reply.code(400).send({ error: "Maximal 3 Mahnstufen — Betreibung über Inkasso-Büro", canOverride: req.user!.role === "ADMIN" });
+    if (invoice.reminderLevel >= 3) {
+      return reply.code(400).send({ error: "Maximal 3 Mahnstufen — Betreibung über Inkasso-Büro" });
     }
-    if (invoice.reminderLevel >= 3 && override) await audit(req.user!.id, "OVERRIDE", "Invoice", id, { beyondLevel3: true });
     const settings = await prisma.setting.findUniqueOrThrow({ where: { id: 1 } });
     const level = invoice.reminderLevel + 1;
     const fees = [Number(settings.reminderFee1), Number(settings.reminderFee2), Number(settings.reminderFee3)];
@@ -238,7 +236,7 @@ export async function invoiceRoutes(app: FastifyInstance): Promise<void> {
   // Rechnung per E-Mail versenden (PDF im Anhang, Template aus TextTemplate)
   app.post("/invoices/:id/send", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = z.object({ email: z.string().email().optional(), override: z.boolean().optional() }).parse(req.body ?? {});
+    const body = z.object({ email: z.string().email().optional() }).parse(req.body ?? {});
     const invoice = await loadFull(id);
     const to = body.email ?? invoice.customer.email;
     if (!to) return reply.code(400).send({ error: "Kunde hat keine E-Mail-Adresse" });
