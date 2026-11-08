@@ -49,4 +49,27 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.get("/me", { preHandler: authGuard }, async (req) => {
     return req.user;
   });
+
+  app.put(
+    "/password",
+    { preHandler: authGuard },
+    async (req, reply) => {
+      const body = z
+        .object({
+          currentPassword: z.string().min(1),
+          newPassword: z.string().min(8, "Neues Passwort: mindestens 8 Zeichen"),
+        })
+        .parse(req.body);
+      const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+      if (!user || !(await bcrypt.compare(body.currentPassword, user.passwordHash))) {
+        return reply.code(400).send({ error: "Aktuelles Passwort ist falsch" });
+      }
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: await bcrypt.hash(body.newPassword, 10) },
+      });
+      await audit(user.id, "PASSWORD_CHANGE", "User", user.id);
+      return { ok: true };
+    },
+  );
 }

@@ -16,6 +16,7 @@ import { auditRoutes } from "./modules/audit.routes.js";
 import { tyreRoutes } from "./modules/tyres.routes.js";
 import { loanerRoutes } from "./modules/loaners.routes.js";
 import { salesRoutes } from "./modules/sales.routes.js";
+import { userRoutes } from "./modules/users.routes.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -56,6 +57,7 @@ export async function buildApp() {
   await app.register(tyreRoutes, { prefix: "/api" });
   await app.register(loanerRoutes, { prefix: "/api" });
   await app.register(salesRoutes, { prefix: "/api" });
+  await app.register(userRoutes, { prefix: "/api" });
 
   return app;
 }

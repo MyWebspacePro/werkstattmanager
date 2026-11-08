@@ -77,6 +77,7 @@ export function Empty({ text }: { text: string }) {
 }
 
 export function ErrorMsg({ error }: { error: unknown }) {
+  if (!error) return null;
   const msg = error instanceof Error ? error.message : "Unbekannter Fehler";
   return <div className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-3 my-2">{msg}</div>;
 }

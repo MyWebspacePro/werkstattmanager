@@ -4,6 +4,156 @@ import { api } from "../lib/api.js";
 import { Button, Card, ErrorMsg, Field, Input, Select, Textarea } from "../components/ui.js";
 import { useAuth } from "../lib/auth.js";
 
+interface AppUser {
+  id: string; email: string; name: string; role: "ADMIN" | "STAFF" | "MECHANIC"; active: boolean; createdAt: string;
+}
+
+function PasswordCard() {
+  const qc = useQueryClient();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [ok, setOk] = useState(false);
+  const mutation = useMutation({
+    mutationFn: (body: { currentPassword: string; newPassword: string }) =>
+      api("/auth/password", { method: "PUT", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      setOk(true); setCurrent(""); setNext(""); setConfirm("");
+      qc.invalidateQueries({ queryKey: ["me"] });
+      setTimeout(() => setOk(false), 3000);
+    },
+  });
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (next !== confirm) return;
+    mutation.mutate({ currentPassword: current, newPassword: next });
+  };
+
+  return (
+    <Card title="Mein Passwort ändern">
+      <form onSubmit={submit} className="space-y-4 max-w-md">
+        <Field label="Aktuelles Passwort">
+          <Input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} required autoComplete="current-password" />
+        </Field>
+        <Field label="Neues Passwort (min. 8 Zeichen)">
+          <Input type="password" value={next} onChange={(e) => setNext(e.target.value)} minLength={8} required autoComplete="new-password" />
+        </Field>
+        <Field label="Neues Passwort wiederholen">
+          <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} minLength={8} required autoComplete="new-password" />
+        </Field>
+        {next && confirm && next !== confirm && <p className="text-sm text-red-600">Passwörter stimmen nicht überein.</p>}
+        <ErrorMsg error={mutation.error} />
+        {ok && <p className="text-sm text-green-700">Passwort geändert ✓</p>}
+        <Button type="submit" disabled={mutation.isPending || (!!next && !!confirm && next !== confirm)}>
+          {mutation.isPending ? "Speichert…" : "Passwort ändern"}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+function UsersCard() {
+  const qc = useQueryClient();
+  const { data: users, isLoading, error } = useQuery({ queryKey: ["users"], queryFn: () => api<AppUser[]>("/users") });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["users"] });
+
+  const update = useMutation({
+    mutationFn: ({ id, ...body }: { id: string; name?: string; role?: string; active?: boolean }) =>
+      api(`/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    onSuccess: invalidate,
+  });
+  const resetPw = useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      api(`/users/${id}/password`, { method: "POST", body: JSON.stringify({ password }) }),
+    onSuccess: invalidate,
+  });
+  const create = useMutation({
+    mutationFn: (body: { email: string; name: string; password: string; role: string }) =>
+      api("/users", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => { invalidate(); setNewUser({ name: "", email: "", password: "", role: "STAFF" }); },
+  });
+
+  const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "STAFF" });
+
+  const askResetPassword = (u: AppUser) => {
+    const pw = window.prompt(`Neues Passwort für ${u.name} (min. 8 Zeichen):`);
+    if (pw) resetPw.mutate({ id: u.id, password: pw });
+  };
+
+  if (isLoading) return null;
+  if (error) return <ErrorMsg error={error} />;
+
+  return (
+    <Card title="Benutzerverwaltung (Chef)">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-slate-500 border-b">
+              <th className="py-2 pr-3">Name</th>
+              <th className="py-2 pr-3">E-Mail</th>
+              <th className="py-2 pr-3">Rolle</th>
+              <th className="py-2 pr-3">Aktiv</th>
+              <th className="py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {(users ?? []).map((u) => (
+              <tr key={u.id} className="border-b last:border-0">
+                <td className="py-2 pr-3 font-medium">{u.name}</td>
+                <td className="py-2 pr-3 text-slate-500">{u.email}</td>
+                <td className="py-2 pr-3">
+                  <Select
+                    value={u.role}
+                    onChange={(e) => update.mutate({ id: u.id, role: e.target.value })}
+                    className="!py-1 !text-sm"
+                  >
+                    <option value="ADMIN">Chef (Admin)</option>
+                    <option value="STAFF">Annahme/Administration</option>
+                    <option value="MECHANIC">Mechaniker</option>
+                  </Select>
+                </td>
+                <td className="py-2 pr-3">
+                  <button
+                    type="button"
+                    onClick={() => update.mutate({ id: u.id, active: !u.active })}
+                    className={`px-2 py-0.5 rounded text-xs ${u.active ? "bg-green-100 text-green-700" : "bg-slate-200 text-slate-500"}`}
+                  >
+                    {u.active ? "aktiv" : "gesperrt"}
+                  </button>
+                </td>
+                <td className="py-2 text-right">
+                  <button type="button" onClick={() => askResetPassword(u)} className="text-blue-600 hover:underline text-xs">
+                    Passwort setzen
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <ErrorMsg error={update.error ?? resetPw.error ?? create.error} />
+
+      <form
+        onSubmit={(e) => { e.preventDefault(); create.mutate(newUser); }}
+        className="mt-5 grid grid-cols-2 md:grid-cols-5 gap-3 items-end border-t pt-4"
+      >
+        <Field label="Name"><Input value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} required minLength={2} /></Field>
+        <Field label="E-Mail"><Input type="email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required /></Field>
+        <Field label="Passwort (min. 8)"><Input type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} required minLength={8} /></Field>
+        <Field label="Rolle">
+          <Select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}>
+            <option value="ADMIN">Chef (Admin)</option>
+            <option value="STAFF">Annahme/Administration</option>
+            <option value="MECHANIC">Mechaniker</option>
+          </Select>
+        </Field>
+        <Button type="submit" disabled={create.isPending}>{create.isPending ? "Legt an…" : "Benutzer anlegen"}</Button>
+      </form>
+    </Card>
+  );
+}
+
 interface Settings {
   companyName: string; addressLine: string; zip: string; city: string; phone: string; email: string; website: string;
   vatNumber: string; vatScheme: "STANDARD" | "SMALL_BUSINESS"; vatRateStandard: string; vatRateReduced: string;
@@ -97,6 +247,9 @@ export default function SettingsPage() {
         )}
         {readOnly && <p className="text-sm text-slate-500">Nur die Chef-Rolle kann Einstellungen ändern.</p>}
       </form>
+
+      <PasswordCard />
+      {user?.role === "ADMIN" && <UsersCard />}
     </div>
   );
 }
