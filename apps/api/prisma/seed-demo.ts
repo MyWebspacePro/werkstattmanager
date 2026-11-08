@@ -149,7 +149,7 @@ async function main() {
           ...(k.marketing
             ? { consents: { create: { type: "EMAIL_MARKETING", granted: true, grantedAt: new Date("2026-09-14"), source: k.marketing } } }
             : {}),
-          vehicles: { create: k.vehicles.map((v) => ({ ...v, vin: null })) },
+          vehicles: { create: k.vehicles.map(({ inches: _ignored, ...v }) => ({ ...v, vin: null })) },
         },
         include: { vehicles: true },
       });
