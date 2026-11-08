@@ -14,21 +14,18 @@ Stand: 2026-11-08 · Deployed von ZCode per SSH — ab jetzt verwaltet **Hermes*
 | Ports nach aussen | **keine eigenen** — Routing läuft über das bestehende Coolify/Traefik-Setup |
 | Integration | `web` hängt mit Traefik-Labels (Präfix `wm-`) im Docker-Netzwerk `coolify`, Certresolver `letsencrypt` — gleiches Muster wie `schwarzbrunn-site` |
 
-## Der eine ausstehende Schritt: HTTPS aktivieren
+## HTTPS: bereits aktiviert (nichts zu tun)
 
-Der A-Record `autowerkstattsoftware.aiconso.eu → 212.227.73.93` steht bereits.
-Es fehlt nur: Domain in `.env` eintragen und Stack mit TLS-Overlay neu starten.
+Am 2026-11-08 von ZCode aktiviert: `APP_DOMAIN=autowerkstattsoftware.aiconso.eu` in `.env`,
+Stack mit `docker-compose.vps-tls.yml`-Overlay gestartet. Let's-Encrypt-Zertifikat ist gültig
+und wird von Traefik automatisch verlängert. Die Idempotenz-Befehle aus dieser Sektion sind
+harmlos erneut ausführbar, aber **nicht nötig**:
 
 ```bash
+# Nur falls Routing nach einem Rebuild fehlt:
 cd /opt/werkstattmanager
-git pull
-sed -i 's|^APP_DOMAIN=.*|APP_DOMAIN=autowerkstattsoftware.aiconso.eu|' .env
 docker compose -f docker-compose.vps.yml -f docker-compose.vps-tls.yml up -d --build web
 ```
-
-Danach holt Traefik automatisch das Let's-Encrypt-Zertifikat (1–2 Minuten).
-Test: `curl -I https://autowerkstattsoftware.aiconso.eu` → HTTP 200.
-Login: `chef@werkstatt.ch` / `changeme` (Sofort ändern!).
 
 ## Updates (künftig über Hermes)
 
