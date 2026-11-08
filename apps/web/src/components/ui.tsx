@@ -7,15 +7,15 @@ export function Button({ variant = "primary", className = "", ...props }: Button
     danger: "bg-red-600 text-white hover:bg-red-700",
     ghost: "bg-transparent text-slate-700 hover:bg-slate-200",
   }[variant];
-  return <button className={`px-4 rounded-lg font-medium transition-colors disabled:opacity-50 ${styles} ${className}`} {...props} />;
+  return <button className={`px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 ${styles} ${className}`} {...props} />;
 }
 
 export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={`w-full px-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`} {...props} />;
+  return <input className={`w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`} {...props} />;
 }
 
 export function Select({ className = "", ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={`w-full px-3 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`} {...props} />;
+  return <select className={`w-full px-3 py-2 text-sm min-h-[38px] border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`} {...props} />;
 }
 
 export function Textarea({ className = "", ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -61,7 +61,7 @@ export function Modal({ open, title, onClose, children }: { open: boolean; title
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 sticky top-0 bg-white">
           <h2 className="font-semibold">{title}</h2>
           <Button variant="ghost" onClick={onClose} aria-label="Schliessen">✕</Button>
