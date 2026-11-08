@@ -37,13 +37,15 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:-werkstatt}
     volumes:
       - ./backups:/backups
-    entrypoint: >
-      sh -c 'while true; do
-        pg_dump -h db -U ${POSTGRES_USER:-werkstatt} ${POSTGRES_DB:-werkstatt}
-        | gzip > /backups/werkstatt_$$(date +%Y%m%d_%H%M%S).sql.gz;
-        find /backups -name "*.sql.gz" -mtime +30 -delete;
-        sleep 86400;
-      done'
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          pg_dump -h db -U ${POSTGRES_USER:-werkstatt} ${POSTGRES_DB:-werkstatt} | gzip > /backups/werkstatt_$$(date +%Y%m%d_%H%M%S).sql.gz
+          find /backups -name "*.sql.gz" -mtime +30 -delete
+          sleep 86400
+        done
 
 volumes:
   db_data:
