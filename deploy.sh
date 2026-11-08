@@ -25,7 +25,11 @@ if [ ! -f .env ]; then
 fi
 
 echo "=== 3/5 Container bauen & starten ==="
-docker compose -f docker-compose.prod.yml --profile tls up -d --build
+if [ -n "$DOMAIN" ]; then
+  docker compose -f docker-compose.prod.yml --profile tls up -d --build
+else
+  docker compose -f docker-compose.prod.yml up -d --build
+fi
 
 echo "=== 4/5 Datenbank einrichten ==="
 sleep 5
