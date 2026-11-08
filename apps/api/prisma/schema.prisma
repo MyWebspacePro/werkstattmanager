@@ -1,0 +1,655 @@
+// Werkstattmanager — Prisma Schema
+// Geldbeträge: Decimal(10,2) CHF · MwSt-Sätze: Decimal(5,2) % · Stunden: Decimal(6,2)
+// Aufbewahrung 10 Jahre (OR 957/958): Soft-Delete via archived-Flags, keine Hard-Deletes bei Belegen
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Nutzer & Stammdaten ─────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN     // Chef: alles
+  STAFF     // Annahme/Administration
+  MECHANIC  // Werkstatt (MVP: kein Login nötig, vorbereitet)
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(STAFF)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  timeEntries TimeEntry[]
+  auditLogs   AuditLog[]
+  stockMoves  StockMovement[]
+}
+
+model Setting {
+  id                Int      @id @default(1) // Singleton
+  companyName       String
+  addressLine       String   @default("")
+  zip               String   @default("")
+  city              String   @default("")
+  phone             String   @default("")
+  email             String   @default("")
+  website           String   @default("")
+  vatNumber         String   @default("") // CHE-123.456.789 MWST
+  vatScheme         String   @default("STANDARD") // STANDARD | SMALL_BUSINESS (Kleingeschäft)
+  vatRateStandard   Decimal  @default(8.1) @db.Decimal(5, 2)
+  vatRateReduced    Decimal  @default(2.6) @db.Decimal(5, 2)
+  iban              String   @default("")
+  qrIban            String   @default("") // CHxx 3xxxx ... QR-IBAN für QR-Rechnung
+  bankName          String   @default("")
+  defaultLaborRate  Decimal  @default(140) @db.Decimal(10, 2) // CHF/h
+  invoicePrefix     String   @default("RE")
+  invoiceNextNumber Int      @default(1)
+  quotePrefix       String   @default("KV")
+  quoteNextNumber   Int      @default(1)
+  orderPrefix       String   @default("AO")
+  orderNextNumber   Int      @default(1)
+  paymentTermsDays  Int      @default(30)
+  invoiceFooter     String   @default("Erfreulich, dass wir Sie mit Ihrem Fahrzeug betreuen durften.")
+  updatedAt         DateTime @updatedAt
+}
+
+model TextTemplate {
+  id        String   @id @default(cuid())
+  key       String   @unique // z.B. "invoice.email", "reminder.service", "tyre.season"
+  subject   String
+  body      String
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Kunden & Fahrzeuge ──────────────────────────────────────────────────────
+
+enum CustomerType {
+  PRIVATE
+  COMPANY
+  FLEET
+}
+
+model Customer {
+  id        String       @id @default(cuid())
+  type      CustomerType @default(PRIVATE)
+  firstName String?
+  lastName  String?
+  company   String?
+  email     String?
+  phone     String?
+  street    String?
+  zip       String?
+  city      String?
+  notes     String?
+  archived  Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  vehicles         Vehicle[]
+  appointments     Appointment[]
+  quotes           Quote[]
+  workOrders       WorkOrder[]
+  invoices         Invoice[]
+  consents         CustomerConsent[]
+  tyreSets         TyreSet[]
+  loans            Loan[]
+  purchaseVehicles PurchaseVehicle[]
+
+  @@index([lastName, firstName])
+  @@index([company])
+}
+
+enum ConsentType {
+  EMAIL_MARKETING
+}
+
+// nDSG: Einwilligungen mit Nachweis (Quelle, Zeitpunkt, Widerruf)
+model CustomerConsent {
+  id         String      @id @default(cuid())
+  customerId String
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  type       ConsentType @default(EMAIL_MARKETING)
+  granted    Boolean     @default(false)
+  grantedAt  DateTime?
+  revokedAt  DateTime?
+  source     String      @default("") // z.B. "Annahmegespräch", "Formular Website"
+
+  @@unique([customerId, type])
+}
+
+model Vehicle {
+  id           String   @id @default(cuid())
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id])
+  licensePlate String
+  vin          String?
+  brand        String
+  model        String
+  year         Int?
+  mileage      Int?
+  fuel         String?
+  notes        String?
+  archived     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  appointments     Appointment[]
+  quotes           Quote[]
+  workOrders       WorkOrder[]
+  invoices         Invoice[]
+  tyreSets         TyreSet[]
+  loans            Loan[]
+  purchaseVehicles PurchaseVehicle[]
+  reminderRules    ReminderRule[]
+
+  @@index([customerId])
+  @@index([licensePlate])
+  @@index([vin])
+}
+
+// ─── Werkstattplaner ─────────────────────────────────────────────────────────
+
+enum ResourceType {
+  LIFT      // Hebebühne
+  MECHANIC
+  BAY       // Arbeitsplatz
+}
+
+model Resource {
+  id     String       @id @default(cuid())
+  name   String
+  type   ResourceType @default(LIFT)
+  active Boolean      @default(true)
+
+  appointments Appointment[]
+}
+
+enum AppointmentStatus {
+  REQUESTED   // beantragt (später auch von Website)
+  CONFIRMED
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+model Appointment {
+  id          String            @id @default(cuid())
+  customerId  String
+  customer    Customer          @relation(fields: [customerId], references: [id])
+  vehicleId   String
+  vehicle     Vehicle           @relation(fields: [vehicleId], references: [id])
+  resourceId  String?
+  resource    Resource?         @relation(fields: [resourceId], references: [id])
+  workOrder   WorkOrder?
+  start       DateTime
+  end         DateTime
+  status      AppointmentStatus @default(CONFIRMED)
+  reason      String?
+  notes       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([start])
+  @@index([resourceId, start])
+  @@index([vehicleId])
+}
+
+// ─── Kostenvoranschlag & Aufträge ────────────────────────────────────────────
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum LineType {
+  LABOR    // Arbeit × Stundensatz (qty = Stunden)
+  PART     // Ersatzteil (Verweis auf Part)
+  EXTERNAL // Fremdleistung (z.B. Glasdienst)
+  FLAT     // Pauschale/Text
+}
+
+model Quote {
+  id              String      @id @default(cuid())
+  number          String      @unique
+  customerId      String
+  customer        Customer    @relation(fields: [customerId], references: [id])
+  vehicleId       String
+  vehicle         Vehicle     @relation(fields: [vehicleId], references: [id])
+  status          QuoteStatus @default(DRAFT)
+  validUntil      DateTime?
+  totalNet        Decimal     @default(0) @db.Decimal(10, 2)
+  totalVat        Decimal     @default(0) @db.Decimal(10, 2)
+  total           Decimal     @default(0) @db.Decimal(10, 2)
+  acceptedAt      DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  notes           String?
+  archived        Boolean     @default(false)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  lines     QuoteLine[]
+  workOrder WorkOrder?
+
+  @@index([status])
+}
+
+model QuoteLine {
+  id          String   @id @default(cuid())
+  quoteId     String
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  type        LineType @default(FLAT)
+  description String
+  qty         Decimal  @default(1) @db.Decimal(6, 2)
+  unit        String   @default("x") // "h", "x", "Stk"
+  unitPrice   Decimal  @default(0) @db.Decimal(10, 2)
+  vatRate     Decimal  @default(8.1) @db.Decimal(5, 2)
+  partId      String?
+  part        Part?    @relation(fields: [partId], references: [id])
+  position    Int      @default(0)
+
+  @@index([quoteId])
+}
+
+enum WorkOrderStatus {
+  OPEN
+  PARTS_ORDERED
+  IN_PROGRESS
+  READY      // fertig, wartet auf Abholung/Abrechnung
+  INVOICED
+  PAID
+  CANCELLED
+}
+
+model WorkOrder {
+  id             String          @id @default(cuid())
+  number         String          @unique
+  customerId     String
+  customer       Customer        @relation(fields: [customerId], references: [id])
+  vehicleId      String
+  vehicle        Vehicle         @relation(fields: [vehicleId], references: [id])
+  appointmentId  String? @unique
+  appointment    Appointment?    @relation(fields: [appointmentId], references: [id])
+  quoteId        String? @unique
+  quote          Quote?          @relation(fields: [quoteId], references: [id])
+  status         WorkOrderStatus @default(OPEN)
+  laborRate      Decimal         @default(140) @db.Decimal(10, 2) // Snapshot beim Anlegen
+  reportedIssues String?         // Kundenschilderung (Mängelrüge-Dokumentation)
+  internalNotes  String?
+  plannedNet     Decimal         @default(0) @db.Decimal(10, 2) // Nachkalkulation
+  actualNet      Decimal         @default(0) @db.Decimal(10, 2)
+  openedAt       DateTime        @default(now())
+  closedAt       DateTime?
+  archived       Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  lines       WorkOrderLine[]
+  timeEntries TimeEntry[]
+  stockMoves  StockMovement[]
+  invoices    Invoice[]
+  photos      WorkOrderPhoto[]
+  loans       Loan[]
+
+  @@index([status])
+  @@index([customerId])
+  @@index([vehicleId])
+}
+
+model WorkOrderLine {
+  id          String    @id @default(cuid())
+  orderId     String
+  order       WorkOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type        LineType  @default(FLAT)
+  description String
+  qty         Decimal   @default(1) @db.Decimal(6, 2)
+  unit        String    @default("x")
+  unitPrice   Decimal   @default(0) @db.Decimal(10, 2)
+  vatRate     Decimal   @default(8.1) @db.Decimal(5, 2)
+  partId      String?
+  part        Part?     @relation(fields: [partId], references: [id])
+  position    Int       @default(0)
+
+  @@index([orderId])
+}
+
+// Phase 2: Zeiterfassung pro Auftrag (Tablet-freundlich vorbereitet)
+model TimeEntry {
+  id        String    @id @default(cuid())
+  orderId   String
+  order     WorkOrder @relation(fields: [orderId], references: [id])
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  startedAt DateTime
+  endedAt   DateTime?
+  minutes   Int?
+  note      String?
+  invoiced  Boolean   @default(false)
+
+  @@index([orderId])
+}
+
+model WorkOrderPhoto {
+  id        String    @id @default(cuid())
+  orderId   String
+  order     WorkOrder @relation(fields: [orderId], references: [id])
+  file      String    // relativer Pfad unter uploads/
+  label     String    @default("") // "vorher", "nachher"
+  createdAt DateTime  @default(now())
+
+  @@index([orderId])
+}
+
+// ─── Teile & Lager ───────────────────────────────────────────────────────────
+
+model Supplier {
+  id    String  @id @default(cuid())
+  name  String  @unique
+  email String?
+  phone String?
+  notes String?
+
+  parts        Part[]
+  priceImports SupplierPriceImport[]
+}
+
+model Part {
+  id            String    @id @default(cuid())
+  number        String    @unique // interne/Lieferanten-Artikelnummer
+  name          String
+  supplierId    String?
+  supplier      Supplier? @relation(fields: [supplierId], references: [id])
+  barcode       String?
+  location      String? // Lagerort (Regal/Fach)
+  stock         Int       @default(0)
+  minStock      Int       @default(0)
+  purchasePrice Decimal   @default(0) @db.Decimal(10, 2)
+  salePrice     Decimal   @default(0) @db.Decimal(10, 2)
+  archived      Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  quoteLines QuoteLine[]
+  orderLines WorkOrderLine[]
+  stockMoves StockMovement[]
+
+  @@index([name])
+  @@index([barcode])
+  @@index([supplierId])
+}
+
+enum StockMoveType {
+  IN     // Wareneingang
+  OUT    // Verbrauch auf Auftrag
+  ADJUST // Inventur-Korrektur
+  RETURN // Rücksendung an Lieferant
+}
+
+model StockMovement {
+  id        String        @id @default(cuid())
+  partId    String
+  part      Part          @relation(fields: [partId], references: [id])
+  type      StockMoveType
+  qty       Int
+  reason    String?
+  orderId   String?
+  order     WorkOrder?    @relation(fields: [orderId], references: [id])
+  userId    String?
+  user      User?         @relation(fields: [userId], references: [id])
+  createdAt DateTime      @default(now())
+
+  @@index([partId])
+  @@index([orderId])
+}
+
+// CSV-Import von Lieferantenpreislisten (Hostettler etc.)
+model SupplierPriceImport {
+  id         String   @id @default(cuid())
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+  fileName   String
+  status     String   @default("PENDING") // PENDING | PROCESSED | FAILED
+  itemCount  Int      @default(0)
+  updatedCnt Int      @default(0)
+  createdCnt Int      @default(0)
+  error      String?
+  createdAt  DateTime @default(now())
+
+  @@index([supplierId])
+}
+
+// ─── Reifenhotel / Saisonlager (Phase 2, Schema jetzt fixiert) ──────────────
+
+enum TyreSeason {
+  SUMMER
+  WINTER
+  ALLSEASON
+}
+
+model TyreSet {
+  id          String    @id @default(cuid())
+  customerId  String
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  vehicleId   String?
+  vehicle     Vehicle?  @relation(fields: [vehicleId], references: [id])
+  slotCode    String    @unique // Lagerplatz "R1-04"
+  season      TyreSeason
+  inches      Int?
+  storedAt    DateTime  @default(now())
+  retrievedAt DateTime?
+  seasonFee   Decimal   @default(0) @db.Decimal(10, 2) // pro Saison
+  notes       String?
+
+  @@index([customerId])
+  @@index([vehicleId])
+}
+
+// ─── Leihwagen (Phase 2) ─────────────────────────────────────────────────────
+
+enum LoanerStatus {
+  AVAILABLE
+  LOANED
+  MAINTENANCE
+  RETIRED
+}
+
+model LoanerVehicle {
+  id        String       @id @default(cuid())
+  plate     String       @unique
+  brand     String
+  model     String
+  status    LoanerStatus @default(AVAILABLE)
+  dailyRate Decimal      @default(40) @db.Decimal(10, 2)
+  odometer  Int          @default(0)
+  notes     String?
+
+  loans Loan[]
+}
+
+enum LoanStatus {
+  OPEN
+  RETURNED
+}
+
+model Loan {
+  id         String        @id @default(cuid())
+  loanerId   String
+  loaner     LoanerVehicle @relation(fields: [loanerId], references: [id])
+  customerId String
+  customer   Customer      @relation(fields: [customerId], references: [id])
+  vehicleId  String?       // Werkstatt-Fahrzeug des Kunden (Referenz)
+  vehicle    Vehicle?      @relation(fields: [vehicleId], references: [id])
+  orderId    String?
+  order      WorkOrder?    @relation(fields: [orderId], references: [id])
+  status     LoanStatus    @default(OPEN)
+  outAt      DateTime      @default(now())
+  dueAt      DateTime
+  returnedAt DateTime?
+  startOdo   Int?
+  endOdo     Int?
+  dailyRate  Decimal       @default(40) @db.Decimal(10, 2)
+
+  @@index([status])
+  @@index([loanerId])
+}
+
+// ─── Gebrauchtwagen-Ankauf & Verkauf (Phase 2) ──────────────────────────────
+
+enum PurchaseVehicleStatus {
+  EVALUATION
+  ACQUIRED
+  PREPARING
+  LISTED
+  SOLD
+}
+
+model PurchaseVehicle {
+  id              String                @id @default(cuid())
+  sellerId        String
+  seller          Customer              @relation(fields: [sellerId], references: [id])
+  vehicleId       String?               // angelegtes Fahrzeug
+  vehicle         Vehicle?              @relation(fields: [vehicleId], references: [id])
+  vin             String?
+  brand           String
+  model           String
+  year            Int?
+  mileage         Int?
+  status          PurchaseVehicleStatus @default(EVALUATION)
+  evaluationNotes String?               // Bewertungsbogen (Freitext/Struktur später)
+  purchasePrice   Decimal?              @db.Decimal(10, 2)
+  prepCosts       Decimal               @default(0) @db.Decimal(10, 2)
+  salePrice       Decimal?              @db.Decimal(10, 2)
+  purchaseDate    DateTime?
+  saleDate        DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([sellerId])
+  @@index([status])
+}
+
+// ─── Fakturierung ────────────────────────────────────────────────────────────
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CREDITED
+  CANCELLED
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  number        String        @unique
+  type          String        @default("INVOICE") // INVOICE | CREDIT_NOTE
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  vehicleId     String?
+  vehicle       Vehicle?      @relation(fields: [vehicleId], references: [id])
+  orderId       String?
+  order         WorkOrder?    @relation(fields: [orderId], references: [id])
+  status        InvoiceStatus @default(DRAFT)
+  date          DateTime      @default(now())
+  dueDate       DateTime
+  totalNet      Decimal       @default(0) @db.Decimal(10, 2)
+  totalVat      Decimal       @default(0) @db.Decimal(10, 2)
+  total         Decimal       @default(0) @db.Decimal(10, 2)
+  paidTotal     Decimal       @default(0) @db.Decimal(10, 2)
+  vatScheme     String        @default("STANDARD") // Snapshot beim Erstellen
+  notes         String?
+  reminderLevel Int           @default(0)
+  archived      Boolean       @default(false) // 10 Jahre Aufbewahrung
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  lines     InvoiceLine[]
+  payments  Payment[]
+  reminders Reminder[]
+
+  @@index([status])
+  @@index([customerId])
+  @@index([date])
+}
+
+model InvoiceLine {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  type        LineType @default(FLAT)
+  description String
+  qty         Decimal  @default(1) @db.Decimal(6, 2)
+  unit        String   @default("x")
+  unitPrice   Decimal  @default(0) @db.Decimal(10, 2)
+  vatRate     Decimal  @default(8.1) @db.Decimal(5, 2)
+  position    Int      @default(0)
+
+  @@index([invoiceId])
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+  date      DateTime @default(now())
+  amount    Decimal  @db.Decimal(10, 2)
+  method    String   @default("TRANSFER") // CASH | CARD | TWINT | QR_INVOICE | TRANSFER | OTHER
+  reference String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+model Reminder {
+  id        String   @id @default(cuid())
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+  level     Int      // 1., 2., 3. Mahnung
+  date      DateTime @default(now())
+  sentTo    String?
+
+  @@index([invoiceId])
+}
+
+// Erinnerungs-Engine (Wartung/MFK/Saison) — Phase 2
+model ReminderRule {
+  id         String    @id @default(cuid())
+  vehicleId  String
+  vehicle    Vehicle   @relation(fields: [vehicleId], references: [id])
+  type       String    // SERVICE | MFK | TYRE_SEASON | CUSTOM
+  dueDate    DateTime?
+  dueMileage Int?
+  message    String?
+  active     Boolean   @default(true)
+  lastSentAt DateTime?
+
+  @@index([vehicleId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String   // LOGIN, CREATE, UPDATE, DELETE, INVOICE_SEND, ...
+  entity    String   // Customer, Invoice, ...
+  entityId  String?
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entity, entityId])
+}

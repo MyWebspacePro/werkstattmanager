@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+}
+
+/* Touch-freundliche Grundeinstellungen (Tablet-orientiert) */
+button, a[role="button"], input, select, textarea {
+  @apply min-h-11;
+}

@@ -1,0 +1,35 @@
+{
+  "app": {
+    "title": "Werkstattmanager",
+    "logout": "Abmelden"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "planner": "Werkstattplaner",
+    "workorders": "Aufträge",
+    "customers": "Kunden",
+    "vehicles": "Fahrzeuge",
+    "parts": "Teile & Lager",
+    "invoices": "Rechnungen",
+    "tyreHotel": "Reifenhotel",
+    "loaners": "Leihwagen",
+    "sales": "Ankauf & Verkauf",
+    "settings": "Einstellungen"
+  },
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "new": "Neu",
+    "search": "Suchen…",
+    "loading": "Lädt…",
+    "error": "Fehler",
+    "actions": "Aktionen",
+    "back": "Zurück",
+    "status": "Status",
+    "print": "Drucken",
+    "yes": "Ja",
+    "no": "Nein"
+  }
+}

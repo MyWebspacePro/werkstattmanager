@@ -1,0 +1,26 @@
+node_modules/
+dist/
+build/
+coverage/
+
+# env & secrets
+.env
+.env.local
+.env.*.local
+
+# databases & uploads
+*.sqlite
+data/
+uploads/
+backups/
+
+# logs & os
+logs/
+*.log
+.DS_Store
+
+# editors & agent session artifacts
+.idea/
+.vscode/
+.zcode/
+*.swp
