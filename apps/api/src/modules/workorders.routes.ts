@@ -36,8 +36,8 @@ export const orderInclude = {
   vehicle: true,
   quote: { select: { id: true, number: true } },
   resource: { select: { id: true, name: true, jobTitle: true, skillLevel: true } },
+  timeEntries: { orderBy: { startedAt: "asc" as const }, include: { user: { select: { id: true, name: true } } } },
   appointment: { select: { id: true, start: true } },
-  timeEntries: { include: { user: { select: { name: true } } }, orderBy: { startedAt: "desc" as const } },
   photos: true,
   loans: { where: { status: "OPEN" as const } },
   invoices: { select: { id: true, number: true, status: true, total: true } },
@@ -173,6 +173,45 @@ export async function workOrderRoutes(app: FastifyInstance): Promise<void> {
     await prisma.workOrder.update({ where: { id }, data: { actualNet: totals.net } });
     await audit(req.user!.id, "UPDATE", "WorkOrder", id, { number: final.number });
     return prisma.workOrder.findUnique({ where: { id }, include: orderInclude });
+  });
+
+
+  // ── Zeiterfassung pro Auftrag ──
+  app.post("/workorders/:id/time", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({
+      minutes: z.coerce.number().int().min(1).max(24 * 60),
+      note: z.string().optional(),
+      userId: z.string().optional(), // nur ADMIN darf für andere buchen
+      startedAt: z.coerce.date().optional(),
+    }).parse(req.body);
+    const order = await prisma.workOrder.findUnique({ where: { id } });
+    if (!order) return reply.code(404).send({ error: "Auftrag nicht gefunden" });
+    if (["INVOICED", "PAID", "CANCELLED"].includes(order.status)) {
+      return reply.code(409).send({ error: `Auftrag ist ${order.status} — keine Zeitbuchung mehr möglich` });
+    }
+    const entry = await prisma.timeEntry.create({
+      data: {
+        orderId: id,
+        userId: body.userId && req.user!.role === "ADMIN" ? body.userId : req.user!.id,
+        minutes: body.minutes, note: body.note, startedAt: body.startedAt ?? new Date(),
+      },
+      include: { user: { select: { id: true, name: true } } },
+    });
+    await audit(req.user!.id, "TIME", "WorkOrder", id, { minutes: body.minutes });
+    return entry;
+  });
+
+  app.delete("/workorders/:id/time/:entryId", async (req, reply) => {
+    const { id, entryId } = req.params as { id: string; entryId: string };
+    const entry = await prisma.timeEntry.findUnique({ where: { id: entryId } });
+    if (!entry || entry.orderId !== id) return reply.code(404).send({ error: "Zeiteintrag nicht gefunden" });
+    if (req.user!.role !== "ADMIN" && entry.userId !== req.user!.id) {
+      return reply.code(403).send({ error: "Nur der eigene Eintrag oder Chef darf löschen" });
+    }
+    await prisma.timeEntry.delete({ where: { id: entryId } });
+    await audit(req.user!.id, "TIME_DELETE", "WorkOrder", id);
+    return { ok: true };
   });
 
   app.patch("/workorders/:id/status", async (req, reply) => {

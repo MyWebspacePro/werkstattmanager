@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { audit } from "../lib/audit.js";
 import { authGuard } from "../plugins/auth.js";
+import { computeTotals } from "../lib/money.js";
 
 const loanerSchema = z.object({
   plate: z.string().min(2),
@@ -81,9 +82,36 @@ export async function loanerRoutes(app: FastifyInstance): Promise<void> {
       await tx.loanerVehicle.update({ where: { id: body.loanerId }, data: { status: "LOANED" } });
       return created;
     });
+    // Tagespauschale als Position auf den Auftrag (wenn verknüpft und nicht fakturiert)
+    let lineWarning: string | undefined;
+    if (body.orderId) {
+      const order = await prisma.workOrder.findUnique({ where: { id: body.orderId }, include: { lines: true } });
+      if (!order) lineWarning = "Verknüpfter Auftrag nicht gefunden";
+      else if (["INVOICED", "PAID", "CANCELLED"].includes(order.status)) lineWarning = `Auftrag ${order.number} ist ${order.status} — Leihwagen-Pauschale wurde NICHT gebucht`;
+      else {
+        const settings = await prisma.setting.findUniqueOrThrow({ where: { id: 1 } });
+        await prisma.workOrderLine.create({
+          data: {
+            orderId: order.id, type: "EXTERNAL",
+            description: `Leihwagen ${loaner.brand} ${loaner.model} (${loaner.plate})`,
+            qty: 1, unit: "Tag", unitPrice: Number(loaner.dailyRate),
+            vatRate: Number(settings.vatRateStandard), position: order.lines.length,
+          },
+        });
+        await recomputeOrderNet(order.id);
+      }
+    }
     await audit(req.user!.id, "CREATE", "Loan", loan.id, { plate: loaner.plate });
-    return loan;
+    return { ...loan, lineWarning };
   });
+
+  /** Nachkalkulation eines Auftrags nach direkten Positionsänderungen. */
+  async function recomputeOrderNet(orderId: string) {
+    const settings = await prisma.setting.findUniqueOrThrow({ where: { id: 1 } });
+    const order = await prisma.workOrder.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+    const totals = computeTotals(order.lines, settings.vatScheme === "SMALL_BUSINESS" ? "SMALL_BUSINESS" : "STANDARD");
+    await prisma.workOrder.update({ where: { id: orderId }, data: { actualNet: totals.net } });
+  }
 
   // Rückgabe: KM + Status updaten
   app.post("/loans/:id/return", async (req) => {
@@ -99,6 +127,15 @@ export async function loanerRoutes(app: FastifyInstance): Promise<void> {
         where: { id: existing.loanerId },
         data: { status: "AVAILABLE", odometer: body.endOdo ?? existing.loaner.odometer },
       });
+      // Tagespauschale auf der Auftragsposition: Anzahl Tage nachträglich
+      if (existing.orderId) {
+        const days = Math.max(1, Math.ceil((Date.now() - new Date(existing.outAt).getTime()) / 86400000));
+        const line = await tx.workOrderLine.findFirst({
+          where: { orderId: existing.orderId, type: "EXTERNAL", description: { startsWith: "Leihwagen" } },
+        });
+        if (line) await tx.workOrderLine.update({ where: { id: line.id }, data: { qty: days } });
+        await recomputeOrderNet(existing.orderId);
+      }
       return updated;
     });
     await audit(req.user!.id, "RETURN", "Loan", id);

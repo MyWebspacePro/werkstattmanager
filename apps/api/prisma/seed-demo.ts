@@ -246,7 +246,11 @@ async function main() {
       },
     });
   }
-  console.log(`✓ Leihwagen: ${leihen.length} Läufe (${leihen.filter((x) => !x.returned).length} offen)`);
+  // Flottenstatus synchronisieren: Wagen mit offener Ausleihe = LOANED
+  await prisma.loanerVehicle.updateMany({ data: { status: "AVAILABLE" } });
+  const openLoanerIds = (await prisma.loan.findMany({ where: { status: "OPEN" }, select: { loanerId: true } })).map((l) => l.loanerId);
+  if (openLoanerIds.length) await prisma.loanerVehicle.updateMany({ where: { id: { in: openLoanerIds } }, data: { status: "LOANED" } });
+  console.log(`✓ Leihwagen: ${leihen.length} Läufe (${openLoanerIds.length} offen, Status sync)`);
 
   // ── Werkstattplan: volle Hochsaison-Tage ────────────────────────────────────
   const monday = new Date();

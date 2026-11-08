@@ -3,6 +3,8 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { audit } from "../lib/audit.js";
 import { authGuard } from "../plugins/auth.js";
+import { nextDocNumber } from "../lib/numbers.js";
+import { computeTotals } from "../lib/money.js";
 
 const tyreSchema = z.object({
   customerId: z.string().min(1),
@@ -63,6 +65,39 @@ export async function tyreRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Saisonerinnerung: Kunden mit eingelagerten Sätzen, gruppiert (Basis für E-Mail-Kampagne)
+
+  // Saison-Gebühr des eingeliagerten Satzes fakturieren (eigene Rechnung, DRAFT)
+  app.post("/tyres/:id/invoice", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const set = await prisma.tyreSet.findUnique({ where: { id }, include: { vehicle: { select: { licensePlate: true, id: true } } } });
+    if (!set) return reply.code(404).send({ error: "Reifensatz nicht gefunden" });
+    if (set.billedAt) return reply.code(409).send({ error: "Gebühr wurde bereits fakturiert" });
+    if (Number(set.seasonFee) <= 0) return reply.code(400).send({ error: "Satz hat keine Lagergebühr hinterlegt" });
+
+    const settings = await prisma.setting.findUniqueOrThrow({ where: { id: 1 } });
+    const scheme = settings.vatScheme === "SMALL_BUSINESS" ? "SMALL_BUSINESS" : "STANDARD";
+    const lines = [{
+      type: "FLAT" as const,
+      description: `Reifenhotel-Saison ${set.season === "WINTER" ? "Winter" : set.season === "SUMMER" ? "Sommer" : "Ganzjahres"} (Lagerplatz ${set.slotCode})${set.vehicle ? ` · ${set.vehicle.licensePlate}` : ""}`,
+      qty: 1, unit: "Saison", unitPrice: Number(set.seasonFee), vatRate: Number(settings.vatRateStandard),
+    }];
+    const totals = computeTotals(lines, scheme);
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + settings.paymentTermsDays);
+    const invoice = await prisma.invoice.create({
+      data: {
+        number: await nextDocNumber("invoice"),
+        type: "INVOICE", customerId: set.customerId, vehicleId: set.vehicleId,
+        status: "DRAFT", dueDate, totalNet: totals.net, totalVat: totals.vat, total: totals.total,
+        vatScheme: scheme, notes: `Reifenhotel-Gebühr ${set.slotCode}`,
+        lines: { create: lines.map((l, i) => ({ ...l, position: i })) },
+      },
+    });
+    await prisma.tyreSet.update({ where: { id }, data: { billedAt: new Date() } });
+    await audit(req.user!.id, "CREATE", "Invoice", invoice.id, { number: invoice.number, tyreSet: set.slotCode });
+    return invoice;
+  });
+
   app.get("/tyres/reminders", async () => {
     const stored = await prisma.tyreSet.findMany({
       where: { retrievedAt: null },

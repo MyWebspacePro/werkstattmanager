@@ -64,12 +64,13 @@ export async function plannerRoutes(app: FastifyInstance): Promise<void> {
   // ── Termine ──
   // Range: ?from=ISO&to=ISO (Kalenderausschnitt) optional resourceId
   app.get("/appointments", async (req) => {
-    const { from, to, resourceId } = (req.query ?? {}) as { from?: string; to?: string; resourceId?: string };
+    const { from, to, resourceId, open } = (req.query ?? {}) as { from?: string; to?: string; resourceId?: string; open?: string };
     const where: Record<string, unknown> = {};
     if (from || to) {
       where.start = { gte: from ? new Date(from) : undefined, lte: to ? new Date(to) : undefined };
     }
     if (resourceId) where.resourceId = resourceId;
+    if (open === "1") where.workOrder = { is: null }; // nur Termine ohne Auftrag (für Übernahme)
     return prisma.appointment.findMany({
       where,
       orderBy: { start: "asc" },

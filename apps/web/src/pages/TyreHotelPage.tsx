@@ -5,7 +5,7 @@ import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, form
 
 interface TyreSet {
   id: string; slotCode: string; season: "SUMMER" | "WINTER" | "ALLSEASON"; inches?: number | null;
-  storedAt: string; seasonFee: string; notes?: string | null;
+  storedAt: string; seasonFee: string; billedAt?: string | null; notes?: string | null;
   customer: { firstName?: string | null; lastName?: string | null; company?: string | null; phone?: string | null };
   vehicle?: { licensePlate: string } | null;
 }
@@ -31,6 +31,15 @@ export default function TyreHotelPage() {
     mutationFn: (id: string) => api(`/tyres/${id}/retrieve`, { method: "POST" }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["tyres"] }); qc.invalidateQueries({ queryKey: ["tyre-reminders"] }); },
   });
+  const invoiceMutation = useMutation({
+    mutationFn: (id: string) => api<{ number: string }>(`/tyres/${id}/invoice`, { method: "POST" }),
+    onSuccess: (inv) => {
+      qc.invalidateQueries({ queryKey: ["tyres"] });
+      setMsg(`Rechnung ${inv.number} erstellt (Entwurf — unter Rechnungen versenden)`);
+      setTimeout(() => setMsg(null), 5000);
+    },
+  });
+  const [msg, setMsg] = useState<string | null>(null);
 
   const seasonLabel = { SUMMER: "Sommer", WINTER: "Winter", ALLSEASON: "Allseason" };
 
@@ -41,15 +50,18 @@ export default function TyreHotelPage() {
         <Button onClick={() => setModalOpen(true)}>+ Einlagerung</Button>
       </div>
       {error && <ErrorMsg error={error} />}
+      {msg && <div className="bg-green-50 text-green-700 rounded-lg px-4 py-2">{msg}</div>}
+      {invoiceMutation.error && <ErrorMsg error={invoiceMutation.error} />}
 
       <Card title={`Eingelagert (${data?.items.length ?? 0} Sätze)`}>
         {!data || data.items.length === 0 ? (
           <Empty text="Keine Räder eingelagert" />
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-100">
-                <th className="py-2">Platz</th><th>Kunde</th><th>Kontrollschild</th><th>Saison</th><th>Zoll</th><th>seit</th><th>Gebühr/Saison</th><th></th>
+                <th className="py-2">Platz</th><th>Kunde</th><th>Kontrollschild</th><th>Saison</th><th>Zoll</th><th>seit</th><th>Gebühr/Saison</th><th>Rechnung</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -62,11 +74,21 @@ export default function TyreHotelPage() {
                   <td>{t.inches ?? "—"}</td>
                   <td>{formatDate(t.storedAt)}</td>
                   <td>{formatCHF(t.seasonFee)}</td>
-                  <td><Button variant="ghost" onClick={() => retrieveMutation.mutate(t.id)}>Auslagern</Button></td>
+                  <td>
+                    {t.billedAt ? (
+                      <Badge color="green">fakturiert</Badge>
+                    ) : Number(t.seasonFee) > 0 ? (
+                      <Button variant="ghost" onClick={() => invoiceMutation.mutate(t.id)} disabled={invoiceMutation.isPending}>
+                        {invoiceMutation.isPending ? "…" : "Fakturieren"}
+                      </Button>
+                    ) : "—"}
+                  </td>
+                  <td className="whitespace-nowrap"><Button variant="ghost" onClick={() => retrieveMutation.mutate(t.id)}>Auslagern</Button></td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 

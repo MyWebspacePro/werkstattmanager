@@ -466,6 +466,7 @@ model TyreSet {
   inches      Int?
   storedAt    DateTime  @default(now())
   retrievedAt DateTime?
+  billedAt    DateTime? // Rechnung für die Saison-Gebühr erstellt
   seasonFee   Decimal   @default(0) @db.Decimal(10, 2) // pro Saison
   notes       String?
 

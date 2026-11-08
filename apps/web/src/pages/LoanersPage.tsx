@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
-import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, formatCHF, formatDate } from "../components/ui.js";
+import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, formatCHF, formatDate } from "../components/ui.js";
 
 interface Loaner {
   id: string; plate: string; brand: string; model: string; status: string; dailyRate: string; odometer: number;
   loans: { id: string; dueAt: string; customer: { firstName?: string | null; lastName?: string | null; company?: string | null } }[];
 }
 interface CustomerOption { id: string; firstName?: string | null; lastName?: string | null; company?: string | null }
+interface OpenOrder { id: string; number: string; customerId: string; status: string }
 
 const statusColor: Record<string, "green" | "yellow" | "red" | "slate"> = {
   AVAILABLE: "green", LOANED: "yellow", MAINTENANCE: "red", RETIRED: "slate",
@@ -23,19 +24,25 @@ export default function LoanersPage() {
   const [selectedLoaner, setSelectedLoaner] = useState<Loaner | null>(null);
   const [returnLoanId, setReturnLoanId] = useState<string | null>(null);
   const [returnOdo, setReturnOdo] = useState(0);
+  const [msg, setMsg] = useState<string | null>(null);
   const [loanerForm, setLoanerForm] = useState({ plate: "", brand: "", model: "", dailyRate: 40 });
-  const [loanForm, setLoanForm] = useState({ customerId: "", dueAt: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10) });
+  const [loanForm, setLoanForm] = useState({ customerId: "", orderId: "", dueAt: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10) });
 
   const { data: loaners, error } = useQuery({ queryKey: ["loaners"], queryFn: () => api<Loaner[]>("/loaners") });
   const { data: customers } = useQuery({ queryKey: ["customers-all"], queryFn: () => api<{ items: CustomerOption[] }>("/customers?take=100") });
+  const { data: openOrders } = useQuery({ queryKey: ["workorders-open"], queryFn: () => api<{ items: OpenOrder[] }>("/workorders?open=true&take=100"), enabled: loanModal });
 
   const addMutation = useMutation({
     mutationFn: () => api("/loaners", { method: "POST", body: JSON.stringify(loanerForm) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["loaners"] }); setLoanerModal(false); },
   });
   const loanMutation = useMutation({
-    mutationFn: () => api("/loans", { method: "POST", body: JSON.stringify({ loanerId: selectedLoaner!.id, customerId: loanForm.customerId, dueAt: new Date(loanForm.dueAt).toISOString() }) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["loaners"] }); setLoanModal(false); },
+    mutationFn: () => api<{ lineWarning?: string }>("/loans", { method: "POST", body: JSON.stringify({ loanerId: selectedLoaner!.id, customerId: loanForm.customerId, orderId: loanForm.orderId || undefined, dueAt: new Date(loanForm.dueAt).toISOString() }) }),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["loaners"] }); qc.invalidateQueries({ queryKey: ["workorders"] });
+      setLoanModal(false);
+      setMsg(r.lineWarning ?? null);
+    },
   });
   const returnMutation = useMutation({
     mutationFn: (payload: { loanId: string; endOdo: number }) => api(`/loans/${payload.loanId}/return`, { method: "POST", body: JSON.stringify({ endOdo: payload.endOdo }) }),
@@ -49,6 +56,7 @@ export default function LoanersPage() {
         <Button onClick={() => setLoanerModal(true)}>+ Leihwagen</Button>
       </div>
       {error && <ErrorMsg error={error} />}
+      {msg && <div className="bg-amber-50 text-amber-800 border border-amber-200 rounded-lg px-4 py-2 text-sm">{msg}</div>}
 
       {!loaners || loaners.length === 0 ? (
         <Card><Empty text="Keine Leihwagen in der Flotte" /></Card>
@@ -116,7 +124,16 @@ export default function LoanersPage() {
             </select>
           </Field>
           <Field label="Rückgabe erwartet"><Input type="date" value={loanForm.dueAt} onChange={(e) => setLoanForm((f) => ({ ...f, dueAt: e.target.value }))} /></Field>
+          <Field label="Auftrag verknüpfen (Tagespauschale landet auf der Rechnung)">
+            <Select value={loanForm.orderId} onChange={(e) => setLoanForm((f) => ({ ...f, orderId: e.target.value }))}>
+              <option value="">— kein Auftrag —</option>
+              {(openOrders?.items ?? []).filter((o) => o.customerId === loanForm.customerId).map((o) => (
+                <option key={o.id} value={o.id}>{o.number}</option>
+              ))}
+            </Select>
+          </Field>
         </div>
+        <p className="text-xs text-slate-400">Bei Rückgabe wird die Pauschale automatisch auf die tatsächlichen Tage angepasst.</p>
         <div className="flex gap-3 mt-6">
           <Button onClick={() => loanMutation.mutate()} disabled={!loanForm.customerId || loanMutation.isPending}>Herausgeben</Button>
           <Button variant="secondary" onClick={() => setLoanModal(false)}>Abbrechen</Button>

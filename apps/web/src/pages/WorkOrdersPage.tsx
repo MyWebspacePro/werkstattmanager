@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiDownload } from "../lib/api.js";
+import { useAuth } from "../lib/auth.js";
 import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, Textarea, formatCHF } from "../components/ui.js";
 import { SKILL_LABELS, SKILL_SHORT } from "../lib/skills.js";
 
@@ -15,6 +16,7 @@ interface WorkOrder {
   customer: { firstName?: string | null; lastName?: string | null; company?: string | null; phone?: string | null };
   vehicle: { licensePlate: string; brand: string; model: string };
   invoices: { id: string; number: string; status: string }[];
+  timeEntries?: TimeEntryView[];
 }
 interface Customer { id: string; firstName?: string | null; lastName?: string | null; company?: string | null; vehicles: { id: string; licensePlate: string; brand: string; model: string }[] }
 
@@ -26,7 +28,14 @@ const statusColor: Record<string, "blue" | "yellow" | "purple" | "green" | "slat
   OPEN: "blue", PARTS_ORDERED: "yellow", IN_PROGRESS: "purple", READY: "green", INVOICED: "slate", PAID: "green",
 };
 
-const emptyOrder = { customerId: "", vehicleId: "", resourceId: "", requiredSkill: 1, reportedIssues: "", internalNotes: "" };
+const emptyOrder = { customerId: "", vehicleId: "", resourceId: "", requiredSkill: 1, appointmentId: "", reportedIssues: "", internalNotes: "" };
+
+interface OpenAppointment {
+  id: string; start: string; reason?: string | null; requiredSkill: number;
+  customer?: { firstName?: string | null; lastName?: string | null; company?: string | null } | null;
+  vehicle?: { licensePlate: string; brand: string; model: string } | null;
+}
+interface TimeEntryView { id: string; minutes: number; note?: string | null; startedAt: string; user: { id: string; name: string } }
 
 export default function WorkOrdersPage() {
   const qc = useQueryClient();
@@ -45,6 +54,11 @@ export default function WorkOrdersPage() {
   const { data: customers } = useQuery({ queryKey: ["customers-all"], queryFn: () => api<{ items: Customer[] }>("/customers?take=100") });
   const { data: parts } = useQuery({ queryKey: ["parts-all"], queryFn: () => api<{ items: { id: string; number: string; name: string; stock: number; salePrice: string }[] }>("/parts?take=500") });
   const { data: resources } = useQuery({ queryKey: ["resources"], queryFn: () => api<{ id: string; name: string; type: string; jobTitle?: string | null; skillLevel: number }[]>("/resources") });
+  const { user } = useAuth();
+  const from = new Date().toISOString();
+  const to = new Date(Date.now() + 21 * 86400000).toISOString();
+  const { data: openAppts } = useQuery({ queryKey: ["appointments-open"], queryFn: () => api<OpenAppointment[]>(`/appointments?open=1&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`), enabled: editorOpen && !selected });
+  const { data: users } = useQuery({ queryKey: ["users"], queryFn: () => api<{ id: string; name: string }[]>("/users"), enabled: editorOpen && user?.role === "ADMIN" });
   const [pageError, setPageError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -72,10 +86,16 @@ export default function WorkOrdersPage() {
   };
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      selected
-        ? api(`/workorders/${selected.id}`, { method: "PUT", body: JSON.stringify({ ...form, lines }) })
-        : api("/workorders", { method: "POST", body: JSON.stringify({ ...form, lines }) }),
+    mutationFn: () => {
+      // Leere FK-Felder sauber abschliessen («» würde FK-Verletzungen werfen)
+      const { appointmentId, ...formRest } = form;
+      const body: Record<string, unknown> = { ...formRest, lines };
+      if (!body.resourceId) body.resourceId = null;
+      if (!selected && appointmentId) body.appointmentId = appointmentId;
+      return selected
+        ? api(`/workorders/${selected.id}`, { method: "PUT", body: JSON.stringify(body) })
+        : api("/workorders", { method: "POST", body: JSON.stringify(body) });
+    },
     onSuccess: () => {
       refresh();
       setSaved(true);
@@ -87,6 +107,17 @@ export default function WorkOrdersPage() {
     mutationFn: (payload: { id: string; status: string }) => api(`/workorders/${payload.id}/status`, { method: "PATCH", body: JSON.stringify({ status: payload.status }) }),
     onSuccess: refresh,
   });
+
+  const timeMutation = useMutation({
+    mutationFn: (body: { minutes: number; note: string; userId?: string }) =>
+      api(`/workorders/${selected!.id}/time`, { method: "POST", body: JSON.stringify({ ...body, userId: body.userId || undefined }) }),
+    onSuccess: () => { setTimeForm({ minutes: 30, note: "", userId: "" }); if (selected) openDetail(selected.id); },
+  });
+  const timeDeleteMutation = useMutation({
+    mutationFn: (entryId: string) => api(`/workorders/${selected!.id}/time/${entryId}`, { method: "DELETE" }),
+    onSuccess: () => { if (selected) openDetail(selected.id); },
+  });
+  const [timeForm, setTimeForm] = useState({ minutes: 30, note: "", userId: "" });
 
   const invoiceMutation = useMutation({
     mutationFn: () => api<{ id: string; number: string }>("/invoices", { method: "POST", body: JSON.stringify({ customerId: form.customerId, vehicleId: form.vehicleId, orderId: selected!.id }) }),
@@ -177,6 +208,34 @@ export default function WorkOrdersPage() {
         {statusMutation.error && <ErrorMsg error={statusMutation.error} />}
         {msg && <div className="bg-green-50 text-green-700 rounded-lg px-4 py-2 mb-3">{msg}</div>}
         {saved && <div className="bg-green-50 text-green-700 rounded-lg px-4 py-2 mb-3">Gespeichert ✓</div>}
+        {!selected && (openAppts?.length ?? 0) > 0 && (
+          <Field label="Von Termin übernehmen (nächste 3 Wochen)">
+            <Select value="" onChange={(e) => {
+              const a = openAppts?.find((x) => x.id === e.target.value);
+              if (!a) return;
+              setForm((f) => ({
+                ...f, appointmentId: a.id,
+                customerId: (a.customer ? "" : f.customerId) || f.customerId,
+                vehicleId: a.vehicle?.licensePlate ? "" : f.vehicleId,
+                reportedIssues: a.reason ?? f.reportedIssues,
+                requiredSkill: Math.max(1, a.requiredSkill || 1),
+              }));
+              // Kunde/Fahrzeug aus dem Termin-Objekt bestimmen (via Fahrzeugliste matchen)
+              if (a.vehicle) {
+                const match = (customers?.items ?? []).find((c) => c.vehicles.some((v) => v.licensePlate === a.vehicle!.licensePlate));
+                const veh = match?.vehicles.find((v) => v.licensePlate === a.vehicle!.licensePlate);
+                if (match && veh) setForm((f) => ({ ...f, customerId: match.id, vehicleId: veh.id }));
+              }
+            }}>
+              <option value="">— leerer Auftrag —</option>
+              {(openAppts ?? []).map((a) => (
+                <option key={a.id} value={a.id}>
+                  {new Date(a.start).toLocaleDateString("de-CH")} {new Date(a.start).toTimeString().slice(0, 5)} · {a.vehicle?.licensePlate ?? "?"} · {a.reason ?? "Termin"}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
         {selected && ["INVOICED", "PAID", "CANCELLED"].includes(selected.status) && (
           <div className="bg-slate-100 text-slate-600 rounded-lg px-4 py-2 mb-3 text-sm">
             🔒 Dieser Auftrag ist {selected.status === "INVOICED" ? "fakturiert" : selected.status === "PAID" ? "bezahlt" : "annulliert"} und gesperrt. Korrekturen nur über Kreditnota (Rechnungen).
@@ -265,6 +324,43 @@ export default function WorkOrdersPage() {
         </div>
         <Button variant="secondary" className="mt-3" onClick={() => setLines((ls) => [...ls, { type: "FLAT", description: "", qty: 1, unit: "x", unitPrice: 0, vatRate: 8.1 }])}>+ Position</Button>
         <div className="text-right font-semibold mt-3">Netto: {formatCHF(netTotal)}</div>
+
+        {selected && (
+          <div className="mt-5 border-t pt-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold">Zeiterfassung</h3>
+              <span className="text-sm text-slate-500">
+                Total: {(() => { const m = (selected.timeEntries ?? []).reduce((s2, t) => s2 + t.minutes, 0); return m ? `${Math.floor(m / 60)} h ${m % 60} min` : "—"; })()}
+              </span>
+            </div>
+            {(selected.timeEntries ?? []).length === 0 && <p className="text-sm text-slate-400 mb-2">Noch keine Zeit erfasst.</p>}
+            <ul className="text-sm space-y-1 mb-3">
+              {(selected.timeEntries ?? []).map((t) => (
+                <li key={t.id} className="flex items-center justify-between bg-slate-50 rounded px-3 py-1.5">
+                  <span><strong>{t.user.name}</strong> · {Math.floor(t.minutes / 60)} h {t.minutes % 60} min{t.note ? ` · ${t.note}` : ""}</span>
+                  <button type="button" className="text-red-500 hover:underline text-xs" onClick={() => timeDeleteMutation.mutate(t.id)}>löschen</button>
+                </li>
+              ))}
+            </ul>
+            {!["INVOICED", "PAID", "CANCELLED"].includes(selected.status) && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+                <Field label="Minuten"><Input type="number" min={1} value={timeForm.minutes} onChange={(e) => setTimeForm((f) => ({ ...f, minutes: Number(e.target.value) }))} /></Field>
+                {user?.role === "ADMIN" && (
+                  <Field label="Für">
+                    <Select value={timeForm.userId} onChange={(e) => setTimeForm((f) => ({ ...f, userId: e.target.value }))}>
+                      <option value="">mich selbst</option>
+                      {(users ?? []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </Select>
+                  </Field>
+                )}
+                <Field label="Notiz"><Input value={timeForm.note} onChange={(e) => setTimeForm((f) => ({ ...f, note: e.target.value }))} placeholder="z.B. Bremsen zerlegt" /></Field>
+                <Button onClick={() => timeMutation.mutate({ minutes: timeForm.minutes, note: timeForm.note, userId: timeForm.userId || undefined })} disabled={timeMutation.isPending || timeForm.minutes < 1}>
+                  {timeMutation.isPending ? "…" : "+ Zeit buchen"}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mt-4">
           <Field label="Interne Notizen"><Textarea rows={2} value={form.internalNotes} onChange={(e) => setForm((f) => ({ ...f, internalNotes: e.target.value }))} /></Field>
