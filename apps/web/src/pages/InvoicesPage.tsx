@@ -41,13 +41,42 @@ export default function InvoicesPage() {
   });
 
   const remindMutation = useMutation({
-    mutationFn: () => api(`/invoices/${detail!.id}/remind`, { method: "POST" }),
-    onSuccess: () => { setMsg("Mahnung erfasst (Status: Überfällig)"); refresh(); },
+    mutationFn: () => api<{ fee: number; sentTo: string | null; warning?: string }>(`/invoices/${detail!.id}/remind`, { method: "POST" }),
+    onSuccess: (r) => {
+      setMsg(r.sentTo
+        ? `${r.fee > 0 ? `Mahnung mit CHF ${r.fee.toFixed(2)} Gebühr` : "Mahnung"} erfasst und per E-Mail gesendet an ${r.sentTo}`
+        : "Mahnung erfasst — kein E-Mail-Versand möglich (siehe Hinweis)");
+      refresh();
+    },
   });
 
   const sendMutation = useMutation({
     mutationFn: () => api<{ sentTo: string }>(`/invoices/${detail!.id}/send`, { method: "POST", body: "{}" }),
     onSuccess: (r) => { setMsg(`Rechnung per E-Mail gesendet an ${r.sentTo}`); refresh(); },
+  });
+
+  // Kreditnota: Originalrechnung laden, Positionen 1:1 als Gutschrift (Backend negiert), Original auf CREDITED
+  const creditMutation = useMutation({
+    mutationFn: async (inv: Invoice) => {
+      const full = await api<{ lines: { type: string; description: string; qty: string; unit: string; unitPrice: string; vatRate: string }[]; customerId: string }>(`/invoices/${inv.id}`);
+      const credit = await api<{ number: string }>(`/invoices`, {
+        method: "POST",
+        body: JSON.stringify({
+          type: "CREDIT_NOTE",
+          customerId: full.customerId,
+          notes: `Kreditnota zu ${inv.number}`,
+          lines: full.lines.map((l) => ({ type: l.type, description: l.description, qty: Number(l.qty), unit: l.unit, unitPrice: Number(l.unitPrice), vatRate: Number(l.vatRate) })),
+        }),
+      });
+      await api(`/invoices/${inv.id}/status`, { method: "PATCH", body: JSON.stringify({ status: "CREDITED" }) });
+      return credit;
+    },
+    onSuccess: (credit) => { setMsg(`Kreditnota ${credit.number} erstellt — Original ist gutgeschrieben`); refresh(); },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => api(`/invoices/${detail!.id}/status`, { method: "PATCH", body: JSON.stringify({ status: "CANCELLED" }) }),
+    onSuccess: () => { setMsg("Rechnung annulliert"); refresh(); },
   });
 
   const openAmount = detail ? Number(detail.total) - Number(detail.paidTotal) : 0;
@@ -73,6 +102,7 @@ export default function InvoicesPage() {
         <Card><Empty text="Noch keine Rechnungen — Rechnungen entstehen aus Aufträgen" /></Card>
       ) : (
         <Card>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-100">
@@ -93,6 +123,7 @@ export default function InvoicesPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 
@@ -114,14 +145,27 @@ export default function InvoicesPage() {
                 {sendMutation.isPending ? "Sendet…" : "✉️ Per E-Mail senden"}
               </Button>
               <Button variant="secondary" onClick={() => { setPayForm((f) => ({ ...f, amount: openAmount })); setPayOpen(true); }}>💰 Zahlung erfassen</Button>
-              <Button variant="secondary" onClick={() => remindMutation.mutate()} disabled={detail.reminderLevel >= 3}>
+              <Button variant="secondary" onClick={() => remindMutation.mutate()} disabled={detail.reminderLevel >= 3 || ["PAID", "CANCELLED", "CREDITED"].includes(detail.status)}>
                 🔔 Mahnung ({Math.min(detail.reminderLevel + 1, 3)}.)
               </Button>
+              {detail.reminderLevel > 0 && (
+                <Button variant="secondary" onClick={() => apiDownload(`/invoices/${detail.id}/reminder-pdf`, `Mahnung-${detail.number}.pdf`)}>🔔 Mahn-PDF</Button>
+              )}
+              {!["CREDITED", "CANCELLED"].includes(detail.status) && (
+                <Button variant="secondary" onClick={() => { if (window.confirm(`Kreditnota über den vollen Betrag von ${detail.number} erstellen?`)) creditMutation.mutate(detail); }} disabled={creditMutation.isPending}>
+                  {creditMutation.isPending ? "Erstellt…" : "↩️ Kreditnota"}
+                </Button>
+              )}
+              {detail.status === "DRAFT" && (
+                <Button variant="danger" onClick={() => { if (window.confirm(`${detail.number} annullieren?`)) cancelMutation.mutate(); }}>Storno</Button>
+              )}
             </div>
+            <ErrorMsg error={sendMutation.error ?? remindMutation.error ?? creditMutation.error ?? cancelMutation.error} />
+            {remindMutation.data?.warning && <p className="text-xs text-amber-600 bg-amber-50 rounded px-3 py-2">{remindMutation.data.warning}</p>}
             {detail.customer.email ? (
               <p className="text-xs text-slate-400">E-Mail des Kunden: {detail.customer.email}</p>
             ) : (
-              <p className="text-xs text-red-500">Kunde hat keine E-Mail — PDF drucken und posten.</p>
+              <p className="text-xs text-red-500">Kunde hat keine E-Mail — Mahn-/Rechnungs-PDF drucken und posten.</p>
             )}
           </div>
         )}

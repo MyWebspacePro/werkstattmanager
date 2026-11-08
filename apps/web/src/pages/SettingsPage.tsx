@@ -158,7 +158,10 @@ interface Settings {
   companyName: string; addressLine: string; zip: string; city: string; phone: string; email: string; website: string;
   vatNumber: string; vatScheme: "STANDARD" | "SMALL_BUSINESS"; vatRateStandard: string; vatRateReduced: string;
   iban: string; qrIban: string; bankName: string; defaultLaborRate: string;
-  invoicePrefix: string; quotePrefix: string; orderPrefix: string; paymentTermsDays: number; invoiceFooter: string;
+  invoicePrefix: string; quotePrefix: string; orderPrefix: string; creditPrefix: string; paymentTermsDays: number;
+  reminderLevel1Days: number; reminderLevel2Days: number; reminderLevel3Days: number;
+  reminderFee1: string; reminderFee2: string; reminderFee3: string;
+  invoiceFooter: string;
 }
 
 export default function SettingsPage() {
@@ -229,14 +232,27 @@ export default function SettingsPage() {
         </Card>
 
         <Card title="Kalkulation & Belegnummern">
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-5 gap-4">
             <Field label="Stundensatz CHF"><Input type="number" step="0.5" value={form.defaultLaborRate} onChange={set("defaultLaborRate")} disabled={readOnly} /></Field>
             <Field label="Rechnung Präfix"><Input value={form.invoicePrefix} onChange={set("invoicePrefix")} disabled={readOnly} /></Field>
             <Field label="KV Präfix"><Input value={form.quotePrefix} onChange={set("quotePrefix")} disabled={readOnly} /></Field>
             <Field label="Auftrag Präfix"><Input value={form.orderPrefix} onChange={set("orderPrefix")} disabled={readOnly} /></Field>
+            <Field label="Kreditnota Präfix"><Input value={form.creditPrefix} onChange={set("creditPrefix")} disabled={readOnly} /></Field>
           </div>
           <div className="mt-4">
             <Field label="Fusstext Rechnung"><Textarea rows={2} value={form.invoiceFooter} onChange={set("invoiceFooter")} disabled={readOnly} /></Field>
+          </div>
+        </Card>
+
+        <Card title="Mahnwesen (3 Stufen)">
+          <p className="text-xs text-slate-500 mb-3">Fristen in Tagen nach Fälligkeit, Gebühren in CHF pro Stufe. Die Mahnung wird als PDF erstellt und per E-Mail versendet (wenn der Kunde eine E-Mail-Adresse hat).</p>
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+            <Field label="1. Mahnung: Tage"><Input type="number" min={1} value={form.reminderLevel1Days} onChange={(e) => setForm({ ...form, reminderLevel1Days: Number(e.target.value) })} disabled={readOnly} /></Field>
+            <Field label="Gebühr CHF"><Input type="number" step="1" min={0} value={form.reminderFee1} onChange={set("reminderFee1")} disabled={readOnly} /></Field>
+            <Field label="2. Mahnung: Tage"><Input type="number" min={1} value={form.reminderLevel2Days} onChange={(e) => setForm({ ...form, reminderLevel2Days: Number(e.target.value) })} disabled={readOnly} /></Field>
+            <Field label="Gebühr CHF"><Input type="number" step="1" min={0} value={form.reminderFee2} onChange={set("reminderFee2")} disabled={readOnly} /></Field>
+            <Field label="3. Mahnung: Tage"><Input type="number" min={1} value={form.reminderLevel3Days} onChange={(e) => setForm({ ...form, reminderLevel3Days: Number(e.target.value) })} disabled={readOnly} /></Field>
+            <Field label="Gebühr CHF"><Input type="number" step="1" min={0} value={form.reminderFee3} onChange={set("reminderFee3")} disabled={readOnly} /></Field>
           </div>
         </Card>
 

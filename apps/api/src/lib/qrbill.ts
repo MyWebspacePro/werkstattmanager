@@ -242,3 +242,96 @@ export async function buildReminderPdf(
   doc.end();
   return done;
 }
+
+/** Kostenvoranschlags-PDF (Brief mit Positionen und Gültigkeit, kein QR-Teil). */
+export async function buildQuotePdf(
+  quote: Prisma.QuoteGetPayload<{ include: { lines: true; customer: true; vehicle: true } }>,
+  settings: Settings
+): Promise<Buffer> {
+  const doc = new PDFDocument({ size: "A4", margin: 40, autoFirstPage: false });
+  const chunks: Buffer[] = [];
+  const done = new Promise<Buffer>((resolve) => {
+    const pass = new PassThrough();
+    pass.on("data", (c: Buffer) => chunks.push(c));
+    pass.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.pipe(pass);
+  });
+
+  const page = doc.addPage({ size: "A4", margin: 40 });
+  const left = 40;
+  let y = 80;
+
+  page.fontSize(16).font("Helvetica-Bold").text(settings.companyName, left, y);
+  page.fontSize(16).text(`Kostenvoranschlag ${quote.number}`, 340, y, { width: 215, align: "right" });
+  y += 22;
+  page.fontSize(9).font("Helvetica");
+  for (const line of [settings.addressLine, `${settings.zip} ${settings.city}`.trim(), settings.phone, settings.email].filter(Boolean)) {
+    page.text(S(line), left, y);
+    y += 12;
+  }
+  page.text(`Datum: ${dateDe(quote.createdAt)}`, 340, 102, { width: 215, align: "right" });
+  if (quote.validUntil) page.text(`Gültig bis: ${dateDe(quote.validUntil)}`, 340, 114, { width: 215, align: "right" });
+
+  y += 18;
+  const c = quote.customer;
+  const customerName = c.company ?? [c.firstName, c.lastName].filter(Boolean).join(" ");
+  page.fontSize(11).font("Helvetica-Bold").text(customerName || "Kunde", left, y);
+  y += 15;
+  page.fontSize(10).font("Helvetica");
+  for (const line of [S(c.street), [S(c.zip), S(c.city)].filter(Boolean).join(" ")].filter(Boolean)) {
+    page.text(line, left, y);
+    y += 13;
+  }
+  if (quote.vehicle) {
+    page.text(`Fahrzeug: ${quote.vehicle.licensePlate} · ${quote.vehicle.brand} ${quote.vehicle.model}`, left, y);
+    y += 16;
+  }
+
+  // Positionen
+  y += 8;
+  const cols = [left, left + 30, left + 330, left + 400, left + 470];
+  page.fontSize(9).font("Helvetica-Bold");
+  page.text("Pos", cols[0], y);
+  page.text("Beschreibung", cols[1], y, { width: 290 });
+  page.text("Menge", cols[2], y, { width: 60, align: "right" });
+  page.text("Einzelpreis", cols[3], y, { width: 60, align: "right" });
+  page.text("Total", cols[4], y, { width: 85, align: "right" });
+  y += 14;
+  page.moveTo(left, y).lineTo(555, y).strokeColor("#cccccc").stroke();
+  y += 8;
+  page.font("Helvetica");
+  let net = 0;
+  quote.lines.forEach((l, i) => {
+    const lineTotal = Number(l.qty) * Number(l.unitPrice);
+    net += lineTotal;
+    const rows: string[] = [page.heightOfString(l.description, { width: 290 }) > 12 ? "multi" : "single"];
+    const h = Math.max(page.heightOfString(l.description, { width: 290 }), 12) + 4;
+    page.text(String(i + 1), cols[0], y);
+    page.text(S(l.description), cols[1], y, { width: 290 });
+    page.text(`${Number(l.qty)} ${S(l.unit)}`, cols[2], y, { width: 60, align: "right" });
+    page.text(CHF(l.unitPrice), cols[3], y, { width: 60, align: "right" });
+    page.text(CHF(lineTotal), cols[4], y, { width: 85, align: "right" });
+    y += h;
+  });
+  page.moveTo(left, y).lineTo(555, y).strokeColor("#cccccc").stroke();
+  y += 10;
+  page.fontSize(10);
+  const right = (label: string, value: string, bold = false) => {
+    page.font(bold ? "Helvetica-Bold" : "Helvetica").text(label, left + 330, y);
+    page.text(value, cols[4], y, { width: 85, align: "right" });
+    y += 17;
+  };
+  right("Netto", CHF(quote.totalNet));
+  if (Number(quote.totalVat) > 0) right("MwSt", CHF(quote.totalVat));
+  right("Total", CHF(quote.total), true);
+
+  y += 16;
+  page.fontSize(9).font("Helvetica").text(
+    "Dieser Kostenvoranschlag ist unverbindlich und gilt, solange oben angegeben, als gültig. Die Arbeiten werden erst nach Ihrer Zustimmung ausgeführt.",
+    left, y, { width: 515 }
+  );
+  page.fontSize(8).text(S(settings.invoiceFooter), left, 780, { width: 515 });
+
+  doc.end();
+  return done;
+}

@@ -5,6 +5,7 @@ import { audit } from "../lib/audit.js";
 import { authGuard } from "../plugins/auth.js";
 import { nextDocNumber } from "../lib/numbers.js";
 import { computeTotals } from "../lib/money.js";
+import { buildQuotePdf } from "../lib/qrbill.js";
 
 const lineSchema = z.object({
   type: z.enum(["LABOR", "PART", "EXTERNAL", "FLAT"]).default("FLAT"),
@@ -136,6 +137,20 @@ export async function quoteRoutes(app: FastifyInstance): Promise<void> {
     } catch {
       return reply.code(404).send({ error: "Kostenvoranschlag nicht gefunden" });
     }
+  });
+
+  // KV-PDF herunterladen
+  app.get("/quotes/:id/pdf", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const quote = await prisma.quote.findUniqueOrThrow({
+      where: { id },
+      include: { lines: { orderBy: { position: "asc" } }, customer: true, vehicle: true },
+    });
+    const settings = await prisma.setting.findUniqueOrThrow({ where: { id: 1 } });
+    const pdf = await buildQuotePdf(quote, settings);
+    reply.header("Content-Type", "application/pdf");
+    reply.header("Content-Disposition", `inline; filename="${quote.number}.pdf"`);
+    return reply.send(pdf);
   });
 
   // Akzeptierten KV in Auftrag umwandeln

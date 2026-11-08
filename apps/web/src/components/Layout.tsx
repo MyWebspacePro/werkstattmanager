@@ -7,6 +7,7 @@ const navItems = [
   { to: "/", key: "nav.dashboard", icon: "📊" },
   { to: "/planer", key: "nav.planner", icon: "📅" },
   { to: "/auftraege", key: "nav.workorders", icon: "🔧" },
+  { to: "/kostenvoranschlaege", key: "nav.quotes", icon: "📋" },
   { to: "/kunden", key: "nav.customers", icon: "👥" },
   { to: "/teile", key: "nav.parts", icon: "📦" },
   { to: "/rechnungen", key: "nav.invoices", icon: "🧾" },

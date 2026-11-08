@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
 import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, formatCHF } from "../components/ui.js";
 
-interface Part { id: string; number: string; name: string; stock: number; minStock: number; purchasePrice: string; salePrice: string; location?: string | null; barcode?: string | null; supplier?: { name: string } | null }
+interface Part { id: string; number: string; name: string; stock: number; minStock: number; purchasePrice: string; salePrice: string; location?: string | null; barcode?: string | null; supplierId?: string | null; supplier?: { name: string } | null }
 interface Supplier { id: string; name: string }
 interface ImportResult { status: string; itemCount: number; createdCnt: number; updatedCnt: number; error?: string | null }
 
@@ -123,7 +123,7 @@ export default function PartsPage() {
                   <td>{p.location ?? "—"}</td>
                   <td>{formatCHF(p.salePrice)}</td>
                   <td>{p.stock <= p.minStock ? <Badge color="red">{p.stock} / min {p.minStock}</Badge> : <Badge color="green">{p.stock}</Badge>}</td>
-                  <td><Button variant="ghost" onClick={() => { setEditing(p); setForm({ ...emptyPart, ...p, barcode: p.barcode ?? "", location: p.location ?? "", supplierId: "", purchasePrice: Number(p.purchasePrice), salePrice: Number(p.salePrice) }); setModalOpen(true); }}>Bearbeiten</Button></td>
+                  <td><Button variant="ghost" onClick={() => { setEditing(p); setForm({ ...emptyPart, ...p, barcode: p.barcode ?? "", location: p.location ?? "", supplierId: p.supplierId ?? "", purchasePrice: Number(p.purchasePrice), salePrice: Number(p.salePrice) }); setModalOpen(true); }}>Bearbeiten</Button></td>
                 </tr>
               ))}
             </tbody>

@@ -40,6 +40,9 @@ export default function WorkOrdersPage() {
     queryFn: () => api<{ items: WorkOrder[]; total: number }>(`/workorders?q=${encodeURIComponent(q)}&open=${openOnly}&take=50`),
   });
   const { data: customers } = useQuery({ queryKey: ["customers-all"], queryFn: () => api<{ items: Customer[] }>("/customers?take=100") });
+  const { data: parts } = useQuery({ queryKey: ["parts-all"], queryFn: () => api<{ items: { id: string; number: string; name: string; stock: number; salePrice: string }[] }>("/parts?take=500") });
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["workorders"] });
 
@@ -51,11 +54,17 @@ export default function WorkOrdersPage() {
   };
 
   const openDetail = async (id: string) => {
-    const wo = await api<WorkOrder>(`/workorders/${id}`);
-    setSelected(wo);
-    setForm({ customerId: wo.customerId, vehicleId: wo.vehicleId, reportedIssues: wo.reportedIssues ?? "", internalNotes: wo.internalNotes ?? "" });
-    setLines(wo.lines.map((l) => ({ type: l.type as Line["type"], description: l.description, qty: Number(l.qty), unit: l.unit, unitPrice: Number(l.unitPrice), vatRate: Number(l.vatRate), partId: l.partId ?? undefined })));
-    setEditorOpen(true);
+    try {
+      const wo = await api<WorkOrder>(`/workorders/${id}`);
+      setSelected(wo);
+      setForm({ customerId: wo.customerId, vehicleId: wo.vehicleId, reportedIssues: wo.reportedIssues ?? "", internalNotes: wo.internalNotes ?? "" });
+      setLines(wo.lines.map((l) => ({ type: l.type as Line["type"], description: l.description, qty: Number(l.qty), unit: l.unit, unitPrice: Number(l.unitPrice), vatRate: Number(l.vatRate), partId: l.partId ?? undefined })));
+      setSaved(false);
+      setPageError(null);
+      setEditorOpen(true);
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : "Auftrag konnte nicht geladen werden");
+    }
   };
 
   const saveMutation = useMutation({
@@ -63,13 +72,34 @@ export default function WorkOrdersPage() {
       selected
         ? api(`/workorders/${selected.id}`, { method: "PUT", body: JSON.stringify({ ...form, lines }) })
         : api("/workorders", { method: "POST", body: JSON.stringify({ ...form, lines }) }),
-    onSuccess: refresh,
+    onSuccess: () => {
+      refresh();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    },
   });
 
   const statusMutation = useMutation({
     mutationFn: (payload: { id: string; status: string }) => api(`/workorders/${payload.id}/status`, { method: "PATCH", body: JSON.stringify({ status: payload.status }) }),
     onSuccess: refresh,
   });
+
+  const invoiceMutation = useMutation({
+    mutationFn: () => api<{ id: string; number: string }>("/invoices", { method: "POST", body: JSON.stringify({ customerId: form.customerId, vehicleId: form.vehicleId, orderId: selected!.id }) }),
+    onSuccess: (inv) => {
+      refresh();
+      setSaved(false);
+      setPageError(null);
+      openDetailAfterInvoice(inv.number);
+    },
+  });
+
+  const openDetailAfterInvoice = async (number: string) => {
+    setPageError(null);
+    setMsg(`Rechnung ${number} erstellt`);
+    if (selected) await openDetail(selected.id);
+  };
+  const [msg, setMsg] = useState("");
 
   const quoteMutation = useMutation({
     mutationFn: () => api("/quotes", { method: "POST", body: JSON.stringify({ customerId: form.customerId, vehicleId: form.vehicleId, notes: form.reportedIssues, lines }) }),
@@ -135,8 +165,18 @@ export default function WorkOrdersPage() {
         </Card>
       )}
 
+      {pageError && <ErrorMsg error={pageError} />}
       <Modal open={editorOpen} title={selected ? `Auftrag ${selected.number}` : "Neuer Auftrag"} onClose={() => setEditorOpen(false)}>
         {saveMutation.error && <ErrorMsg error={saveMutation.error} />}
+        {invoiceMutation.error && <ErrorMsg error={invoiceMutation.error} />}
+        {statusMutation.error && <ErrorMsg error={statusMutation.error} />}
+        {msg && <div className="bg-green-50 text-green-700 rounded-lg px-4 py-2 mb-3">{msg}</div>}
+        {saved && <div className="bg-green-50 text-green-700 rounded-lg px-4 py-2 mb-3">Gespeichert ✓</div>}
+        {selected && ["INVOICED", "PAID", "CANCELLED"].includes(selected.status) && (
+          <div className="bg-slate-100 text-slate-600 rounded-lg px-4 py-2 mb-3 text-sm">
+            🔒 Dieser Auftrag ist {selected.status === "INVOICED" ? "fakturiert" : selected.status === "PAID" ? "bezahlt" : "annulliert"} und gesperrt. Korrekturen nur über Kreditnota (Rechnungen).
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Kunde / Fahrzeug">
             <Select value={form.vehicleId} onChange={(e) => {
@@ -170,10 +210,28 @@ export default function WorkOrdersPage() {
         <div className="space-y-2">
           {lines.map((l, i) => (
             <div key={i} className="grid grid-cols-12 gap-2 items-end">
-              <Select className="col-span-2" value={l.type} onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, type: e.target.value as Line["type"], unit: e.target.value === "LABOR" ? "h" : "x" } : x))}>
+              <Select className="col-span-2" value={l.type} onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, type: e.target.value as Line["type"], unit: e.target.value === "LABOR" ? "h" : "x", partId: undefined } : x))}>
                 <option value="LABOR">Arbeit</option><option value="PART">Teil</option><option value="EXTERNAL">Fremd</option><option value="FLAT">Pauschale</option>
               </Select>
-              <Input className="col-span-4" placeholder="Beschreibung" value={l.description} onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, description: e.target.value } : x))} />
+              {l.type === "PART" ? (
+                <Select className="col-span-4" value={l.partId ?? ""} onChange={(e) => {
+                  const pid = e.target.value;
+                  const part = (parts?.items ?? []).find((p) => p.id === pid);
+                  setLines((ls) => ls.map((x, j) => j === i ? {
+                    ...x,
+                    partId: pid || undefined,
+                    description: part ? `${part.name}` : x.description,
+                    unitPrice: part ? Number(part.salePrice) : x.unitPrice,
+                  } : x));
+                }}>
+                  <option value="">— Teil aus Lager wählen —</option>
+                  {(parts?.items ?? []).map((p) => (
+                    <option key={p.id} value={p.id}>{p.number} · {p.name} — {formatCHF(p.salePrice)} (Lager: {p.stock})</option>
+                  ))}
+                </Select>
+              ) : (
+                <Input className="col-span-4" placeholder="Beschreibung" value={l.description} onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, description: e.target.value } : x))} />
+              )}
               <Input className="col-span-1" type="number" step="0.25" value={l.qty} onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, qty: Number(e.target.value) } : x))} />
               <Input className="col-span-2" type="number" step="0.05" value={l.unitPrice} onChange={(e) => setLines((ls) => ls.map((x, j) => j === i ? { ...x, unitPrice: Number(e.target.value) } : x))} />
               <div className="col-span-2 text-right text-sm font-medium">{formatCHF(l.qty * l.unitPrice)}</div>
@@ -194,8 +252,8 @@ export default function WorkOrdersPage() {
             <>
               <Button variant="secondary" onClick={printOrderSheet}>🖨 Auftragsblatt drucken</Button>
               {selected.invoices.length === 0 ? (
-                <Button variant="secondary" onClick={() => api(`/invoices`, { method: "POST", body: JSON.stringify({ customerId: form.customerId, vehicleId: form.vehicleId, orderId: selected.id }) }).then(refresh)}>
-                  Rechnung erstellen
+                <Button variant="secondary" onClick={() => invoiceMutation.mutate()} disabled={invoiceMutation.isPending}>
+                  {invoiceMutation.isPending ? "Erstellt…" : "Rechnung erstellen"}
                 </Button>
               ) : (
                 <Button variant="secondary" onClick={() => apiDownload(`/invoices/${selected.invoices[0].id}/pdf`, `${selected.invoices[0].number}.pdf`)}>

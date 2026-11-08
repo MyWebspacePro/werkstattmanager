@@ -7,7 +7,7 @@ interface Purchase {
   id: string; brand: string; model: string; year?: number | null; mileage?: number | null; vin?: string | null;
   status: string; purchasePrice?: string | null; prepCosts: string; salePrice?: string | null;
   evaluationNotes?: string | null;
-  seller: { firstName?: string | null; lastName?: string | null; company?: string | null };
+  seller: { id: string; firstName?: string | null; lastName?: string | null; company?: string | null };
   vehicle?: { licensePlate: string } | null;
 }
 
@@ -52,7 +52,7 @@ export default function SalesPage() {
   const openEdit = (p: Purchase) => {
     setEditing(p);
     setForm({
-      sellerId: "", brand: p.brand, model: p.model, year: String(p.year ?? ""), mileage: String(p.mileage ?? ""),
+      sellerId: p.seller.id ?? "", brand: p.brand, model: p.model, year: String(p.year ?? ""), mileage: String(p.mileage ?? ""),
       vin: p.vin ?? "", purchasePrice: p.purchasePrice ?? "", prepCosts: p.prepCosts ?? "0", evaluationNotes: p.evaluationNotes ?? "",
     });
     setModalOpen(true);

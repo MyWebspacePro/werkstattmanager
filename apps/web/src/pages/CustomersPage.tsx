@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
 import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, Textarea } from "../components/ui.js";
@@ -125,11 +126,17 @@ export default function CustomersPage() {
                 const name = c.company ?? `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim();
                 return (
                   <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
-                    <td className="py-2 font-medium">{name || "—"}</td>
+                    <td className="py-2 font-medium">
+                      <Link to={`/kunden/${c.id}`} className="hover:text-blue-600 hover:underline" title="Kundendossier öffnen">{name || "—"}</Link>
+                    </td>
                     <td><Badge color={c.type === "COMPANY" ? "blue" : c.type === "FLEET" ? "purple" : "slate"}>{c.type}</Badge></td>
                     <td className="text-slate-600">{[c.email, c.phone].filter(Boolean).join(" · ")}</td>
                     <td className="text-slate-600">{[c.zip, c.city].filter(Boolean).join(" ")}</td>
-                    <td>{c.vehicles.map((v) => v.licensePlate).join(", ") || "—"}</td>
+                    <td>
+                      {c.vehicles.length === 0 ? "—" : c.vehicles.map((v) => (
+                        <Link key={v.id} to={`/fahrzeuge/${v.id}`} className="mr-2 hover:text-blue-600 hover:underline" title="Fahrzeugakte öffnen">{v.licensePlate}</Link>
+                      ))}
+                    </td>
                     <td>{c.consents.some((x) => x.type === "EMAIL_MARKETING" && x.granted) ? "✓" : "—"}</td>
                     <td className="whitespace-nowrap">
                       <Button variant="ghost" onClick={() => setVehicleModalFor(c)}>+ Fahrzeug</Button>

@@ -6,6 +6,9 @@ import DashboardPage from "./pages/DashboardPage.js";
 import CustomersPage from "./pages/CustomersPage.js";
 import PlannerPage from "./pages/PlannerPage.js";
 import WorkOrdersPage from "./pages/WorkOrdersPage.js";
+import QuotesPage from "./pages/QuotesPage.js";
+import CustomerDetailPage from "./pages/CustomerDetailPage.js";
+import VehicleDetailPage from "./pages/VehicleDetailPage.js";
 import PartsPage from "./pages/PartsPage.js";
 import InvoicesPage from "./pages/InvoicesPage.js";
 import SettingsPage from "./pages/SettingsPage.js";
@@ -30,7 +33,10 @@ export default function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/planer" element={<PlannerPage />} />
         <Route path="/auftraege" element={<WorkOrdersPage />} />
+        <Route path="/kostenvoranschlaege" element={<QuotesPage />} />
         <Route path="/kunden" element={<CustomersPage />} />
+        <Route path="/kunden/:id" element={<CustomerDetailPage />} />
+        <Route path="/fahrzeuge/:id" element={<VehicleDetailPage />} />
         <Route path="/teile" element={<PartsPage />} />
         <Route path="/rechnungen" element={<InvoicesPage />} />
         <Route path="/reifenhotel" element={<TyreHotelPage />} />
