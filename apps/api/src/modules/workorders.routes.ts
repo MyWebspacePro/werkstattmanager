@@ -39,6 +39,7 @@ export const orderInclude = {
   timeEntries: { orderBy: { startedAt: "asc" as const }, include: { user: { select: { id: true, name: true } } } },
   appointment: { select: { id: true, start: true } },
   photos: true,
+  assignments: { include: { resource: { select: { id: true, name: true, jobTitle: true, skillLevel: true } } } },
   loans: { where: { status: "OPEN" as const } },
   invoices: { select: { id: true, number: true, status: true, total: true } },
 };
@@ -211,6 +212,40 @@ export async function workOrderRoutes(app: FastifyInstance): Promise<void> {
     }
     await prisma.timeEntry.delete({ where: { id: entryId } });
     await audit(req.user!.id, "TIME_DELETE", "WorkOrder", id);
+    return { ok: true };
+  });
+
+
+  // ── Geplante Personen-Zuweisungen (z.B. Diagnostiker 20 min + Mechaniker) ──
+  app.post("/workorders/:id/assignments", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({
+      resourceId: z.string().min(1),
+      plannedMinutes: z.coerce.number().int().min(1).max(24 * 60).optional(),
+      note: z.string().optional(),
+    }).parse(req.body);
+    const order = await prisma.workOrder.findUnique({ where: { id } });
+    if (!order) return reply.code(404).send({ error: "Auftrag nicht gefunden" });
+    if (["INVOICED", "PAID", "CANCELLED"].includes(order.status)) {
+      return reply.code(409).send({ error: `Auftrag ist ${order.status} — keine Zuweisung mehr möglich` });
+    }
+    const resource = await prisma.resource.findUnique({ where: { id: body.resourceId } });
+    if (!resource) return reply.code(404).send({ error: "Ressource nicht gefunden" });
+    if (resource.type !== "MECHANIC") return reply.code(400).send({ error: "Nur Personen (Mechaniker) zuweisbar — Bühnen gehören zum Termin" });
+    const created = await prisma.orderAssignment.create({
+      data: { orderId: id, resourceId: body.resourceId, plannedMinutes: body.plannedMinutes, note: body.note },
+      include: { resource: { select: { id: true, name: true, jobTitle: true, skillLevel: true } } },
+    });
+    await audit(req.user!.id, "ASSIGN", "WorkOrder", id, { who: resource.name, minutes: body.plannedMinutes });
+    return created;
+  });
+
+  app.delete("/workorders/:id/assignments/:assignmentId", async (req, reply) => {
+    const { id, assignmentId } = req.params as { id: string; assignmentId: string };
+    const row = await prisma.orderAssignment.findUnique({ where: { id: assignmentId } });
+    if (!row || row.orderId !== id) return reply.code(404).send({ error: "Zuweisung nicht gefunden" });
+    await prisma.orderAssignment.delete({ where: { id: assignmentId } });
+    await audit(req.user!.id, "ASSIGN_DELETE", "WorkOrder", id);
     return { ok: true };
   });
 

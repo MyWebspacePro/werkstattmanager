@@ -8,6 +8,7 @@ const appointmentFields = z.object({
   customerId: z.string().min(1),
   vehicleId: z.string().min(1),
   resourceId: z.string().optional(),
+  mechanicId: z.string().optional(),
   start: z.coerce.date(),
   end: z.coerce.date(),
   reason: z.string().optional(),
@@ -77,7 +78,8 @@ export async function plannerRoutes(app: FastifyInstance): Promise<void> {
       include: {
         customer: { select: { id: true, firstName: true, lastName: true, company: true, phone: true } },
         vehicle: { select: { id: true, licensePlate: true, brand: true, model: true } },
-        resource: { select: { id: true, name: true, jobTitle: true, skillLevel: true } },
+        resource: { select: { id: true, name: true, type: true, jobTitle: true, skillLevel: true } },
+        mechanic: { select: { id: true, name: true, jobTitle: true, skillLevel: true } },
         workOrder: { select: { id: true, number: true, status: true } },
       },
     });
@@ -85,7 +87,7 @@ export async function plannerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/appointments", async (req, reply) => {
     const data = appointmentSchema.parse(req.body);
-    if (await hasConflict(data.resourceId, data.start, data.end)) {
+    if (await hasConflict(data.resourceId, data.start, data.end) || await hasConflict(data.mechanicId, data.start, data.end)) {
       return reply.code(409).send({ error: "Ressource ist in diesem Zeitraum bereits belegt" });
     }
     const appointment = await prisma.appointment.create({ data });
@@ -101,10 +103,11 @@ export async function plannerRoutes(app: FastifyInstance): Promise<void> {
     const start = data.start ?? existing.start;
     const end = data.end ?? existing.end;
     const resourceId = data.resourceId !== undefined ? data.resourceId : existing.resourceId ?? undefined;
-    if (await hasConflict(resourceId, start, end, id)) {
-      return reply.code(409).send({ error: "Ressource ist in diesem Zeitraum bereits belegt" });
+    const mechanicId = data.mechanicId !== undefined ? data.mechanicId : existing.mechanicId ?? undefined;
+    if (await hasConflict(resourceId, start, end, id) || await hasConflict(mechanicId, start, end, id)) {
+      return reply.code(409).send({ error: "Bühne oder Person ist in diesem Zeitraum bereits belegt" });
     }
-    const appointment = await prisma.appointment.update({ where: { id }, data: { ...data, resourceId: resourceId ?? null } });
+    const appointment = await prisma.appointment.update({ where: { id }, data: { ...data, resourceId: resourceId ?? null, mechanicId: mechanicId ?? null } });
     await audit(req.user!.id, "UPDATE", "Appointment", id, { status: appointment.status });
     return appointment;
   });

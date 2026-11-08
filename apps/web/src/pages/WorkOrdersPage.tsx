@@ -17,6 +17,7 @@ interface WorkOrder {
   vehicle: { licensePlate: string; brand: string; model: string };
   invoices: { id: string; number: string; status: string }[];
   timeEntries?: TimeEntryView[];
+  assignments?: { id: string; plannedMinutes?: number | null; note?: string | null; resource: { id: string; name: string; jobTitle?: string | null; skillLevel: number } }[];
 }
 interface Customer { id: string; firstName?: string | null; lastName?: string | null; company?: string | null; vehicles: { id: string; licensePlate: string; brand: string; model: string }[] }
 
@@ -108,6 +109,17 @@ export default function WorkOrdersPage() {
     onSuccess: refresh,
   });
 
+  const assignMutation = useMutation({
+    mutationFn: (body: { resourceId: string; plannedMinutes?: number; note?: string }) =>
+      api(`/workorders/${selected!.id}/assignments`, { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => { setAssignForm({ resourceId: "", plannedMinutes: 30, note: "" }); if (selected) openDetail(selected.id); },
+  });
+  const assignDeleteMutation = useMutation({
+    mutationFn: (assignmentId: string) => api(`/workorders/${selected!.id}/assignments/${assignmentId}`, { method: "DELETE" }),
+    onSuccess: () => { if (selected) openDetail(selected.id); },
+  });
+  const [assignForm, setAssignForm] = useState({ resourceId: "", plannedMinutes: 30, note: "" });
+
   const timeMutation = useMutation({
     mutationFn: (body: { minutes: number; note: string; userId?: string }) =>
       api(`/workorders/${selected!.id}/time`, { method: "POST", body: JSON.stringify({ ...body, userId: body.userId || undefined }) }),
@@ -151,6 +163,7 @@ export default function WorkOrdersPage() {
       <h1>Auftrag ${selected.number}</h1>
       <div class="meta"><strong>${cust}</strong> · ${selected.vehicle.licensePlate} · ${selected.vehicle.brand} ${selected.vehicle.model}</div>
       <div class="meta">Zugewiesen: <strong>${form.resourceId ? (resources?.find((r) => r.id === form.resourceId)?.name ?? "—") : "offen"}</strong> · Qualifikation: ${SKILL_SHORT[form.requiredSkill] ?? "—"}</div>
+      ${(selected?.assignments ?? []).length ? `<div class="meta">Einsatzplan: ${(selected?.assignments ?? []).map((a) => `${a.resource.name}${a.plannedMinutes ? ` (${a.plannedMinutes} min)` : ""}${a.note ? ` — ${a.note}` : ""}`).join(" · ")}</div>` : ""}
       ${selected.reportedIssues ? `<div class="meta"><em>Kundenauftrag:</em> ${selected.reportedIssues}</div>` : ""}
       <table><tr><th>Pos</th><th>Beschreibung</th><th>Menge</th><th>Art</th></tr>${rows}</table>
       <div class="meta" style="margin-top:24px">Erledigt: ☐ &nbsp; Kontrollschild: ☐ &nbsp; Abholung: ☐ &nbsp; Unterschrift Kunde: ____________</div>
@@ -327,8 +340,45 @@ export default function WorkOrdersPage() {
 
         {selected && (
           <div className="mt-5 border-t pt-4">
+            <h3 className="font-semibold mb-2">Geplante Zuweisung (wer macht was)</h3>
+            <p className="text-xs text-slate-400 mb-2">Mehrere Personen möglich — z.B. Diagnostiker 20 min Fehlersuche, danach der Mechaniker für die Arbeit.</p>
+            {(selected.assignments ?? []).length === 0 && <p className="text-sm text-slate-400 mb-2">Noch niemand geplant — «Zugewiesen an» oben setzt den Hauptverantwortlichen.</p>}
+            <ul className="text-sm space-y-1 mb-3">
+              {(selected.assignments ?? []).map((a) => (
+                <li key={a.id} className="flex items-center justify-between bg-blue-50 rounded px-3 py-1.5">
+                  <span>
+                    <strong>{a.resource.name}</strong>{a.resource.jobTitle ? ` (${a.resource.jobTitle})` : ""}
+                    {a.plannedMinutes ? ` · geplant ${Math.floor(a.plannedMinutes / 60) ? `${Math.floor(a.plannedMinutes / 60)} h ` : ""}${a.plannedMinutes % 60} min` : ""}
+                    {a.note ? ` · ${a.note}` : ""}
+                  </span>
+                  <button type="button" className="text-red-500 hover:underline text-xs" onClick={() => assignDeleteMutation.mutate(a.id)}>entfernen</button>
+                </li>
+              ))}
+            </ul>
+            {!["INVOICED", "PAID", "CANCELLED"].includes(selected.status) && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end mb-2">
+                <Field label="Person">
+                  <Select value={assignForm.resourceId} onChange={(e) => setAssignForm((f) => ({ ...f, resourceId: e.target.value }))}>
+                    <option value="">— wählen —</option>
+                    {(resources ?? []).filter((r) => r.type === "MECHANIC" && r.skillLevel >= form.requiredSkill).map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}{r.jobTitle ? ` — ${r.jobTitle}` : ""}</option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Geplante Minuten"><Input type="number" min={1} value={assignForm.plannedMinutes} onChange={(e) => setAssignForm((f) => ({ ...f, plannedMinutes: Number(e.target.value) }))} /></Field>
+                <Field label="Wofür"><Input value={assignForm.note} onChange={(e) => setAssignForm((f) => ({ ...f, note: e.target.value }))} placeholder="z.B. Fehlersuche" /></Field>
+                <Button onClick={() => assignMutation.mutate({ resourceId: assignForm.resourceId, plannedMinutes: assignForm.plannedMinutes || undefined, note: assignForm.note || undefined })} disabled={assignMutation.isPending || !assignForm.resourceId}>
+                  {assignMutation.isPending ? "…" : "+ Zuweisen"}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {selected && (
+          <div className="mt-5 border-t pt-4">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold">Zeiterfassung</h3>
+              <h3 className="font-semibold">Zeiterfassung (Ist)</h3>
               <span className="text-sm text-slate-500">
                 Total: {(() => { const m = (selected.timeEntries ?? []).reduce((s2, t) => s2 + t.minutes, 0); return m ? `${Math.floor(m / 60)} h ${m % 60} min` : "—"; })()}
               </span>

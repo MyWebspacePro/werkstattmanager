@@ -182,8 +182,24 @@ model Resource {
   jobTitle   String?      // z.B. Automobildiagnostiker — nur für MECHANIC-Ressourcen
   skillLevel Int          @default(1) // 0=Bühne/Ressource · 1=Automobilfachmann · 2=Automechatroniker · 3=Diagnostiker
 
-  appointments Appointment[]
-  workOrders   WorkOrder[]
+  appointments         Appointment[]      @relation("AppointmentResource")
+  mechanicAppointments Appointment[]      @relation("AppointmentMechanic")
+  workOrders           WorkOrder[]
+  assignments          OrderAssignment[]
+}
+
+// Geplante Personen-Zuweisung pro Auftrag (z.B. Diagnostiker 20 min, danach Mechaniker)
+model OrderAssignment {
+  id             String    @id @default(cuid())
+  orderId        String
+  order          WorkOrder @relation(fields: [orderId], references: [id])
+  resourceId     String
+  resource       Resource  @relation(fields: [resourceId], references: [id])
+  plannedMinutes Int?      // geplanter Zeitaufwand
+  note           String?
+  createdAt      DateTime  @default(now())
+
+  @@index([orderId])
 }
 
 enum AppointmentStatus {
@@ -201,7 +217,9 @@ model Appointment {
   vehicleId   String
   vehicle     Vehicle           @relation(fields: [vehicleId], references: [id])
   resourceId  String?
-  resource    Resource?         @relation(fields: [resourceId], references: [id])
+  resource    Resource?         @relation("AppointmentResource", fields: [resourceId], references: [id])
+  mechanicId  String?           // Zugewiesener Mechaniker (Person) — getrennt von der Bühne
+  mechanic    Resource?         @relation("AppointmentMechanic", fields: [mechanicId], references: [id])
   workOrder   WorkOrder?
   start       DateTime
   end         DateTime
@@ -318,6 +336,7 @@ model WorkOrder {
   stockMoves  StockMovement[]
   invoices    Invoice[]
   photos      WorkOrderPhoto[]
+  assignments OrderAssignment[]
   loans       Loan[]
 
   @@index([status])

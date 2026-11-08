@@ -82,7 +82,9 @@ async function main() {
   for (const old of ["Mechaniker 1", "Mechaniker 2"]) {
     await prisma.resource.updateMany({ where: { name: old }, data: { active: false } });
   }
-  const res = Object.fromEntries((await prisma.resource.findMany({ where: { active: true } })).map((r) => [r.name, r.id]));
+  const resRaw = await prisma.resource.findMany({ where: { active: true } });
+  const res = Object.fromEntries(resRaw.map((r) => [r.name, r.id]));
+  const resByNameResourceType = Object.fromEntries(resRaw.map((r) => [r.name, r.type]));
   console.log(`✓ Ressourcen: ${Object.keys(res).length} aktiv (4 Bühnen + Werkstatt-Team)`);
 
   // ── 20 Kunden mit Fahrzeugen (Region Schaffhausen) ─────────────────────────
@@ -419,7 +421,9 @@ async function main() {
       data: {
         customerId: v.customerId,
         vehicleId: v.id,
-        resourceId: resource !== "—" ? res[resource] : undefined,
+        ...(resource !== "—" && resByNameResourceType[resource] === "MECHANIC"
+          ? { mechanicId: res[resource] }
+          : { resourceId: resource !== "—" ? res[resource] : undefined }),
         requiredSkill: reqSkill,
         status,
         reason,
