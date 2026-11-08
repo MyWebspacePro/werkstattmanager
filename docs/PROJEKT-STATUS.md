@@ -58,6 +58,14 @@ Node 22 · npm workspaces · `.env` liegt am Root UND in `apps/api/` (Prisma/tsx
 - Update-Prozedur + Notfall-Wiederherstellung: `VPS-UEBERGABE.md` (auch für Hermes)
 - `deploy.sh` = Ein-Befehl-Setup für leere Server · Git-Push-Hänger → `GIT_TERMINAL_PROMPT=0 git push https://x-access-token:$(gh auth token)@github.com/MyWebspacePro/werkstattmanager.git main`
 
+**Verknüpfungen + VPS-Spiegel (2026-11-08, deployed):**
+- Leihwagen↔Auftrag: Herausgabe mit Auftragswahl → Tagespauschale als Position, Rückgabe = Tage-Anpassung
+- Reifenhotel: «Fakturieren» pro Satz → Rechnung (billedAt schützt vor Doppel)
+- Termin→Auftrag: übernehmbare Termine im Auftragsdialog (open=1)
+- Zeiterfassung: Minuten/Notiz/Person pro Auftrag (Chef bucht für andere), Total im Auftrag
+- **VPS = Spiegel von lokal:** MechBox-Demodaten laufen auf autowerkstattsoftware.aiconso.eu
+  (Login jorge@fabios-mechbox.ch / mechbox2026); Regel in ~/.zcode/AGENTS.md verankert
+
 **Skill-Zuweisung + Demo-Daten Fabios MechBox (2026-11-08, deployed):**
 - Skill-Modell nach CH-Berufslogik: Resource.skillLevel (0=Bühne · 1=Fachmann · 2=Automechatroniker · 3=Diagnostiker); Planer + Auftrag filtern «Zugewiesen an» nach Mindestqualifikation (Appointment.requiredSkill / WorkOrder.requiredSkill)
 - **Demo-Szenario (nur lokale Dev-DB!): Fabios Mech_Box GmbH** (fabios-mechbox.ch, Solenbergstrasse 15, 8207 Schaffhausen) — Team real gemäss fabios-mechbox.ch/team
