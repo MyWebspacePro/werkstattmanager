@@ -8,6 +8,8 @@
  */
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/lib/prisma.js";
+import { nextDocNumber } from "../src/lib/numbers.js";
+import { computeTotals } from "../src/lib/money.js";
 
 const PW = "mechbox2026";
 
@@ -428,6 +430,137 @@ async function main() {
     angelegt++;
   }
   console.log(`✓ Werkstattplan: ${angelegt} Termine (2 Wochen Hochsaison, 4 Bühnen)`);
+
+
+  // ── Auftragsbuch: realistische Aufträge über alle Status ───────────────────
+  const userByName = Object.fromEntries((await prisma.user.findMany()).map((u) => [u.name, u.id]));
+  const settings = await prisma.setting.findUniqueOrThrow({ where: { id: 1 } });
+  const vat = Number(settings.vatRateStandard);
+
+  type OrderDef = {
+    plate: string; reason: string; status: "OPEN" | "IN_PROGRESS" | "READY" | "INVOICED" | "PAID";
+    assigned?: string; reqSkill: number;
+    lines: Array<{ type: "LABOR" | "PART" | "EXTERNAL" | "FLAT"; description: string; qty: number; unit: string; unitPrice: number }>;
+    times?: Array<{ who: string; minutes: number; note: string }>;
+    invoice?: { status: "SENT" | "PAID" | "PARTIALLY_PAID"; paid?: number };
+  };
+  const auftraege: OrderDef[] = [
+    { plate: "SH 284103", reason: "Bremsen vorne + hinten", status: "PAID", assigned: "Marco Eichmann", reqSkill: 2,
+      lines: [
+        { type: "LABOR", description: "Bremsen vorne + hinten wechseln", qty: 1.5, unit: "h", unitPrice: 145 },
+        { type: "PART", description: "Bremsbeläge vorne (ATE)", qty: 1, unit: "Satz", unitPrice: 86 },
+        { type: "PART", description: "Bremsscheiben hinten", qty: 2, unit: "Stk", unitPrice: 58 },
+      ],
+      times: [{ who: "Marco Eichmann", minutes: 90, note: "Bremsen zerlegt + neu" }],
+      invoice: { status: "PAID", paid: 503.16 } },
+    { plate: "SH 301872", reason: "Diagnose Motorleuchte", status: "INVOICED", assigned: "Jason Pagnin", reqSkill: 3,
+      lines: [
+        { type: "LABOR", description: "Fehlersuche + Lambdasonde tauschen", qty: 1, unit: "h", unitPrice: 155 },
+        { type: "PART", description: "Lambdasonde hinten", qty: 1, unit: "Stk", unitPrice: 112 },
+      ],
+      times: [{ who: "Jason Pagnin", minutes: 60, note: "Fehlercode P0136" }],
+      invoice: { status: "SENT" } },
+    { plate: "SH 187365", reason: "Zahnriemen + Wasserpumpe", status: "IN_PROGRESS", assigned: "Cedric Holenstein", reqSkill: 2,
+      lines: [
+        { type: "LABOR", description: "Zahnriemen + Wasserpumpe wechseln", qty: 4, unit: "h", unitPrice: 145 },
+        { type: "PART", description: "Zahnriemensatz Contitech", qty: 1, unit: "Satz", unitPrice: 148 },
+        { type: "PART", description: "Wasserpumpe + Kühlmittel", qty: 1, unit: "Satz", unitPrice: 96 },
+      ],
+      times: [{ who: "Cedric Holenstein", minutes: 150, note: "Tag 1: zerlegt" }] },
+    { plate: "SH 174092", reason: "Auspuffanlage ersetzen", status: "READY", assigned: "Gianni Verrilli", reqSkill: 1,
+      lines: [
+        { type: "LABOR", description: "Mittelschalldämpfer + Endtopf", qty: 2, unit: "h", unitPrice: 140 },
+        { type: "PART", description: "Auspuffanlage komplettsatz", qty: 1, unit: "Stk", unitPrice: 289 },
+      ],
+      times: [{ who: "Gianni Verrilli", minutes: 120, note: "Angepasst und verschweisst" }] },
+    { plate: "SH 263891", reason: "Stossdämpfer hinten", status: "OPEN", assigned: "Marco Eichmann", reqSkill: 2,
+      lines: [
+        { type: "LABOR", description: "Stossdämpfer hinten beidseitig", qty: 2.5, unit: "h", unitPrice: 145 },
+        { type: "PART", description: "Stossdämpfer-Set + Domlager", qty: 1, unit: "Satz", unitPrice: 234 },
+      ] },
+    { plate: "SH 310284", reason: "Inspektion Flottenfahrzeug", status: "INVOICED", assigned: "Cedric Holenstein", reqSkill: 2,
+      lines: [
+        { type: "LABOR", description: "Inspektion nach Herstellervorgabe", qty: 1.5, unit: "h", unitPrice: 145 },
+        { type: "PART", description: "Ölfilter + Motoröl 5W30", qty: 1, unit: "Satz", unitPrice: 74 },
+        { type: "FLAT", description: "Leihwagen Volkswagen up! 1.0 (SH 100125)", qty: 2, unit: "Tag", unitPrice: 45 },
+      ],
+      times: [{ who: "Cedric Holenstein", minutes: 90, note: "Inspektion + Dokumentation" }],
+      invoice: { status: "PARTIALLY_PAID", paid: 150 } },
+    { plate: "SH 163527", reason: "Service klein", status: "OPEN", assigned: "Elijah Jäger", reqSkill: 1,
+      lines: [
+        { type: "LABOR", description: "Kleiner Service", qty: 1, unit: "h", unitPrice: 135 },
+        { type: "PART", description: "Ölfilter + Öl 5W40 (4 L)", qty: 1, unit: "Satz", unitPrice: 62 },
+      ] },
+  ];
+
+  for (const o of auftraege) {
+    const v = veh(o.plate);
+    const dup = await prisma.workOrder.findFirst({ where: { vehicleId: v.id, reportedIssues: o.reason } });
+    if (dup) continue;
+    const created = await prisma.workOrder.create({
+      data: {
+        number: await nextDocNumber("order"),
+        customerId: v.customerId, vehicleId: v.id,
+        status: o.status,
+        resourceId: o.assigned ? res[o.assigned] : null,
+        requiredSkill: o.reqSkill,
+        reportedIssues: o.reason,
+        laborRate: Number(settings.defaultLaborRate),
+        lines: { create: o.lines.map((l, i) => ({ ...l, vatRate: vat, position: i })) },
+      },
+      include: { lines: true },
+    });
+    // Nachkalkulation
+    const totals = computeTotals(created.lines, settings.vatScheme === "SMALL_BUSINESS" ? "SMALL_BUSINESS" : "STANDARD");
+    await prisma.workOrder.update({ where: { id: created.id }, data: { actualNet: totals.net } });
+    // Zeiten
+    for (const t of o.times ?? []) {
+      await prisma.timeEntry.create({
+        data: { orderId: created.id, userId: userByName[t.who], minutes: t.minutes, note: t.note, startedAt: new Date("2026-11-04T08:00:00") },
+      });
+    }
+    // Rechnung + Zahlung
+    if (o.invoice) {
+      const invLines = o.lines.map((l) => ({ type: l.type, description: l.description, qty: l.qty, unit: l.unit, unitPrice: l.unitPrice, vatRate: vat }));
+      const invTotals = computeTotals(invLines, settings.vatScheme === "SMALL_BUSINESS" ? "SMALL_BUSINESS" : "STANDARD");
+      const dueDate = new Date("2026-11-01");
+      dueDate.setDate(dueDate.getDate() + settings.paymentTermsDays);
+      const invoice = await prisma.invoice.create({
+        data: {
+          number: await nextDocNumber("invoice"),
+          type: "INVOICE", customerId: v.customerId, vehicleId: v.id, orderId: created.id,
+          status: o.invoice.status === "PAID" ? "PAID" : o.invoice.status === "SENT" ? "SENT" : "PARTIALLY_PAID",
+          date: new Date("2026-11-02"), dueDate,
+          totalNet: invTotals.net, totalVat: invTotals.vat, total: invTotals.total, vatScheme: settings.vatScheme,
+          paidTotal: o.invoice.paid ?? 0,
+          lines: { create: invLines.map((l, i) => ({ ...l, position: i })) },
+        },
+      });
+      if (o.invoice.paid && o.invoice.paid > 0) {
+        await prisma.payment.create({
+          data: { invoiceId: invoice.id, amount: o.invoice.paid, method: "QR_INVOICE", date: new Date("2026-11-05") },
+        });
+      }
+    }
+  }
+  console.log(`✓ Auftragsbuch: ${auftraege.length} Aufträge über alle Status (inkl. Rechnungen/Zahlungen/Zeiten)`);
+
+  // Leihwagen-Läufe auf die passenden Aufträge bücheln
+  const loanLinks: Array<{ loanerPlate: string; reason: string }> = [
+    { loanerPlate: "SH 100125", reason: "Zahnriemen + Wasserpumpe" },
+    { loanerPlate: "SH 100238", reason: "Auspuffanlage ersetzen" },
+    { loanerPlate: "SH 100351", reason: "Stossdämpfer hinten" },
+  ];
+  for (const l of loanLinks) {
+    const loanerRow = await prisma.loanerVehicle.findUnique({ where: { plate: l.loanerPlate } });
+    if (!loanerRow) continue;
+    const loan = await prisma.loan.findFirst({ where: { loanerId: loanerRow.id, orderId: null, status: "OPEN" } });
+    if (!loan) continue;
+    const order = await prisma.workOrder.findFirst({ where: { reportedIssues: l.reason, status: { in: ["OPEN", "IN_PROGRESS", "READY"] } } });
+    if (!order) continue;
+    await prisma.loan.update({ where: { id: loan.id }, data: { orderId: order.id } });
+  }
+  console.log("✓ Leihwagen-Läufe mit Aufträgen verknüpft");
 
   console.log("\nDemo-Logins (Passwort für alle: mechbox2026):");
   for (const t of team) console.log(`  ${t.email} — ${t.name} (${t.jobTitle})`);
