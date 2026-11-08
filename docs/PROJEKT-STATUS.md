@@ -58,6 +58,11 @@ Node 22 · npm workspaces · `.env` liegt am Root UND in `apps/api/` (Prisma/tsx
 - Update-Prozedur + Notfall-Wiederherstellung: `VPS-UEBERGABE.md` (auch für Hermes)
 - `deploy.sh` = Ein-Befehl-Setup für leere Server · Git-Push-Hänger → `GIT_TERMINAL_PROMPT=0 git push https://x-access-token:$(gh auth token)@github.com/MyWebspacePro/werkstattmanager.git main`
 
+**Kunden-Fixes (2026-11-08, deployed):**
+- Leerer Kunde nicht mehr möglich: Backend-Pflichtvalidierung (Privat: Vor-/Nachname, Firma/Flotte: Firma) + required-Felder im Modal
+- Kennzeichen: Fahrzeug-Sektion im Neuer-Kunde-Modal (Kunde+Fahrzeug transaktional in einem Call) + «+ Fahrzeug»-Button pro Kundenzeile
+- Verifiziert: leer → 400 (lokal + Prod), UI-E2E Kunde «Uitester» mit SH UI 100 über den Browser angelegt
+
 **Auth-Verwaltung (2026-11-08, deployed):**
 - «Mein Passwort ändern» in Einstellungen (alle Rollen, altes Passwort nötig, min. 8 Zeichen) — `PUT /api/auth/password`
 - Benutzerverwaltung in Einstellungen (nur Chef): anlegen, Rolle, aktiv/gesperrt, Passwort-Reset — `/api/users`
