@@ -58,6 +58,13 @@ Node 22 · npm workspaces · `.env` liegt am Root UND in `apps/api/` (Prisma/tsx
 - Update-Prozedur + Notfall-Wiederherstellung: `VPS-UEBERGABE.md` (auch für Hermes)
 - `deploy.sh` = Ein-Befehl-Setup für leere Server · Git-Push-Hänger → `GIT_TERMINAL_PROMPT=0 git push https://x-access-token:$(gh auth token)@github.com/MyWebspacePro/werkstattmanager.git main`
 
+**Skill-Zuweisung + Demo-Daten Fabios MechBox (2026-11-08, deployed):**
+- Skill-Modell nach CH-Berufslogik: Resource.skillLevel (0=Bühne · 1=Fachmann · 2=Automechatroniker · 3=Diagnostiker); Planer + Auftrag filtern «Zugewiesen an» nach Mindestqualifikation (Appointment.requiredSkill / WorkOrder.requiredSkill)
+- **Demo-Szenario (nur lokale Dev-DB!): Fabios Mech_Box GmbH** (fabios-mechbox.ch, Solenbergstrasse 15, 8207 Schaffhausen) — Team real gemäss fabios-mechbox.ch/team
+- Demo-Logins (lokal, Passwort alle `mechbox2026`): jorge@ (Werkstattchef, ADMIN), andy@ (Annahme), ramona@ (Buchhaltung), michael@ (Kundendienst) → STAFF · jason@ (Diagnostiker, L3), cedric@ + marco@ (Mechatroniker, L2), elijah@ + roger@ (Fachmänner, L1), besim@ (Reifenpraktiker) → MECHANIC
+- `npm run db:seed:demo` (idempotent): 20 Kunden/21 Fahrzeuge (Region SH, echte Namensmuster), 22 Termine skill-gerecht über 2 Wochen, Ressourcen umbenannt (Mechaniker 1/2 → Personen, deaktiviert)
+- Prod bleibt Clean (chef@/annahme@) — Hebebühnen dort auf skillLevel 0 korrigiert
+
 **Welle 1 nach Funktions-Audit (2026-11-08, deployed):**
 - Funktions-Audit mit 3 Subagenten → **[FUNKTIONS-AUDIT.md](FUNKTIONS-AUDIT.md)** (Befund: viele fertige Backend-Endpunkte waren im Frontend nie erreichbar)
 - Neu: KV-Verwaltungsseite + KV-PDF · Teile-Picker auf Aufträgen (Lagerabbuchung via UI) · Kunden-Dossier · Fahrzeugakte (Bearbeiten/Archiv) · Kreditnota (GS-Kreis, negative Beträge) · Mahn-PDF/-E-Mail + Mahnstufen konfigurierbar · Lieferanten-Datenverlust-Fix · Auftrags-Statusschutz · minStock-Nachbestell-Fix
