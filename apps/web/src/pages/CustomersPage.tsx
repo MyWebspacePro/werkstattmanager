@@ -14,7 +14,10 @@ interface Customer {
 const emptyForm = {
   type: "PRIVATE" as "PRIVATE" | "COMPANY" | "FLEET", firstName: "", lastName: "", company: "", email: "", phone: "",
   street: "", zip: "", city: "", notes: "", emailMarketingConsent: false, consentSource: "",
+  vehiclePlate: "", vehicleBrand: "", vehicleModel: "", vehicleYear: "", vehicleMileage: "",
 };
+
+const emptyVehicle = { licensePlate: "", brand: "", model: "", year: "", mileage: "" };
 
 export default function CustomersPage() {
   const qc = useQueryClient();
@@ -22,6 +25,8 @@ export default function CustomersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [vehicleModalFor, setVehicleModalFor] = useState<Customer | null>(null);
+  const [vform, setVform] = useState(emptyVehicle);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["customers", q],
@@ -29,7 +34,7 @@ export default function CustomersPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (body: typeof emptyForm) =>
+    mutationFn: (body: typeof emptyForm & { vehicle?: Record<string, unknown> }) =>
       editing
         ? api(`/customers/${editing.id}`, { method: "PUT", body: JSON.stringify(body) })
         : api("/customers", { method: "POST", body: JSON.stringify(body) }),
@@ -39,21 +44,60 @@ export default function CustomersPage() {
     },
   });
 
+  const vehicleMutation = useMutation({
+    mutationFn: (customerId: string) =>
+      api("/vehicles", {
+        method: "POST",
+        body: JSON.stringify({
+          customerId,
+          licensePlate: vform.licensePlate.trim(),
+          brand: vform.brand.trim(),
+          model: vform.model.trim(),
+          ...(vform.year ? { year: Number(vform.year) } : {}),
+          ...(vform.mileage ? { mileage: Number(vform.mileage) } : {}),
+        }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["customers"] });
+      setVehicleModalFor(null);
+      setVform(emptyVehicle);
+    },
+  });
+
   const openNew = () => { setEditing(null); setForm(emptyForm); setModalOpen(true); };
   const openEdit = (c: Customer) => {
     setEditing(c);
     setForm({
+      ...emptyForm,
       type: c.type, firstName: c.firstName ?? "", lastName: c.lastName ?? "", company: c.company ?? "",
       email: c.email ?? "", phone: c.phone ?? "", street: c.street ?? "", zip: c.zip ?? "",
       city: c.city ?? "", notes: c.notes ?? "",
       emailMarketingConsent: c.consents.some((x) => x.type === "EMAIL_MARKETING" && x.granted),
-      consentSource: "",
     });
     setModalOpen(true);
   };
 
   const set = (key: keyof typeof emptyForm) => (e: { target: { value: string; type?: string; checked?: boolean } }) =>
     setForm((f) => ({ ...f, [key]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+  const setV = (key: keyof typeof emptyVehicle) => (e: { target: { value: string } }) =>
+    setVform((f) => ({ ...f, [key]: e.target.value }));
+
+  const submitCustomer = (e: React.FormEvent) => {
+    e.preventDefault();
+    const vehicle = form.vehiclePlate.trim()
+      ? {
+          licensePlate: form.vehiclePlate.trim(),
+          brand: form.vehicleBrand.trim(),
+          model: form.vehicleModel.trim(),
+          ...(form.vehicleYear ? { year: Number(form.vehicleYear) } : {}),
+          ...(form.vehicleMileage ? { mileage: Number(form.vehicleMileage) } : {}),
+        }
+      : undefined;
+    saveMutation.mutate({ ...form, vehicle });
+  };
+
+  const isPrivate = form.type === "PRIVATE";
+  const withVehicle = !editing && !!form.vehiclePlate.trim();
 
   return (
     <div className="space-y-4">
@@ -87,7 +131,10 @@ export default function CustomersPage() {
                     <td className="text-slate-600">{[c.zip, c.city].filter(Boolean).join(" ")}</td>
                     <td>{c.vehicles.map((v) => v.licensePlate).join(", ") || "—"}</td>
                     <td>{c.consents.some((x) => x.type === "EMAIL_MARKETING" && x.granted) ? "✓" : "—"}</td>
-                    <td><Button variant="ghost" onClick={() => openEdit(c)}>Bearbeiten</Button></td>
+                    <td className="whitespace-nowrap">
+                      <Button variant="ghost" onClick={() => setVehicleModalFor(c)}>+ Fahrzeug</Button>
+                      <Button variant="ghost" onClick={() => openEdit(c)}>Bearbeiten</Button>
+                    </td>
                   </tr>
                 );
               })}
@@ -98,48 +145,83 @@ export default function CustomersPage() {
 
       <Modal open={modalOpen} title={editing ? "Kunde bearbeiten" : "Neuer Kunde"} onClose={() => setModalOpen(false)}>
         {saveMutation.error && <ErrorMsg error={saveMutation.error} />}
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Typ">
-            <Select value={form.type} onChange={set("type")}>
-              <option value="PRIVATE">Privat</option>
-              <option value="COMPANY">Firma</option>
-              <option value="FLEET">Flotte</option>
-            </Select>
-          </Field>
-          {form.type === "PRIVATE" ? (
-            <>
-              <Field label="Vorname"><Input value={form.firstName} onChange={set("firstName")} /></Field>
-              <Field label="Nachname"><Input value={form.lastName} onChange={set("lastName")} /></Field>
-            </>
-          ) : (
-            <Field label="Firma"><Input value={form.company} onChange={set("company")} /></Field>
+        <form onSubmit={submitCustomer}>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Typ">
+              <Select value={form.type} onChange={set("type")}>
+                <option value="PRIVATE">Privat</option>
+                <option value="COMPANY">Firma</option>
+                <option value="FLEET">Flotte</option>
+              </Select>
+            </Field>
+            {isPrivate ? (
+              <>
+                <Field label="Vorname"><Input value={form.firstName} onChange={set("firstName")} /></Field>
+                <Field label="Nachname"><Input value={form.lastName} onChange={set("lastName")} required={isPrivate} /></Field>
+              </>
+            ) : (
+              <Field label="Firma"><Input value={form.company} onChange={set("company")} required={!isPrivate} /></Field>
+            )}
+            <Field label="E-Mail"><Input type="email" value={form.email} onChange={set("email")} /></Field>
+            <Field label="Telefon"><Input value={form.phone} onChange={set("phone")} /></Field>
+            <Field label="Strasse"><Input value={form.street} onChange={set("street")} /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="PLZ"><Input value={form.zip} onChange={set("zip")} /></Field>
+              <Field label="Ort"><Input value={form.city} onChange={set("city")} /></Field>
+            </div>
+          </div>
+          <div className="mt-4">
+            <Field label="Notizen"><Textarea rows={2} value={form.notes} onChange={set("notes")} /></Field>
+          </div>
+
+          {!editing && (
+            <div className="mt-4 border-t pt-4">
+              <p className="text-sm font-medium text-slate-700 mb-3">Fahrzeug (optional — Kennzeichen genügt nicht ohne Marke/Modell)</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <Field label="Kennzeichen"><Input value={form.vehiclePlate} onChange={set("vehiclePlate")} placeholder="SH 123 456" /></Field>
+                <Field label="Marke"><Input value={form.vehicleBrand} onChange={set("vehicleBrand")} required={withVehicle} /></Field>
+                <Field label="Modell"><Input value={form.vehicleModel} onChange={set("vehicleModel")} required={withVehicle} /></Field>
+                <Field label="Jahr"><Input type="number" value={form.vehicleYear} onChange={set("vehicleYear")} min={1950} max={2100} /></Field>
+                <Field label="KM-Stand"><Input type="number" value={form.vehicleMileage} onChange={set("vehicleMileage")} min={0} /></Field>
+              </div>
+            </div>
           )}
-          <Field label="E-Mail"><Input type="email" value={form.email} onChange={set("email")} /></Field>
-          <Field label="Telefon"><Input value={form.phone} onChange={set("phone")} /></Field>
-          <Field label="Strasse"><Input value={form.street} onChange={set("street")} /></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="PLZ"><Input value={form.zip} onChange={set("zip")} /></Field>
-            <Field label="Ort"><Input value={form.city} onChange={set("city")} /></Field>
+
+          <label className="flex items-center gap-2 mt-4 text-sm">
+            <input type="checkbox" className="w-5 h-5" checked={form.emailMarketingConsent} onChange={set("emailMarketingConsent")} />
+            E-Mail-Einwilligung (Erinnerungen/Marketing) — nDSG: Nachweis wird protokolliert
+          </label>
+          {form.emailMarketingConsent && (
+            <div className="mt-2">
+              <Field label="Quelle der Einwilligung"><Input value={form.consentSource} onChange={set("consentSource")} placeholder="z.B. Formular am Empfang" /></Field>
+            </div>
+          )}
+          <div className="flex gap-3 mt-6">
+            <Button type="submit" disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? "Speichert…" : "Speichern"}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>Abbrechen</Button>
           </div>
-        </div>
-        <div className="mt-4">
-          <Field label="Notizen"><Textarea rows={2} value={form.notes} onChange={set("notes")} /></Field>
-        </div>
-        <label className="flex items-center gap-2 mt-4 text-sm">
-          <input type="checkbox" className="w-5 h-5" checked={form.emailMarketingConsent} onChange={set("emailMarketingConsent")} />
-          E-Mail-Einwilligung (Erinnerungen/Marketing) — nDSG: Nachweis wird protokolliert
-        </label>
-        {form.emailMarketingConsent && (
-          <div className="mt-2">
-            <Field label="Quelle der Einwilligung"><Input value={form.consentSource} onChange={set("consentSource")} placeholder="z.B. Formular am Empfang" /></Field>
+        </form>
+      </Modal>
+
+      <Modal open={!!vehicleModalFor} title={vehicleModalFor ? `Fahrzeug hinzufügen — ${vehicleModalFor.company ?? `${vehicleModalFor.firstName ?? ""} ${vehicleModalFor.lastName ?? ""}`.trim()}` : ""} onClose={() => setVehicleModalFor(null)}>
+        {vehicleMutation.error && <ErrorMsg error={vehicleMutation.error} />}
+        <form onSubmit={(e) => { e.preventDefault(); vehicleMutation.mutate(vehicleModalFor!.id); }}>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Kennzeichen"><Input value={vform.licensePlate} onChange={setV("licensePlate")} required placeholder="SH 123 456" /></Field>
+            <Field label="Marke"><Input value={vform.brand} onChange={setV("brand")} required /></Field>
+            <Field label="Modell"><Input value={vform.model} onChange={setV("model")} required /></Field>
+            <Field label="Jahr"><Input type="number" value={vform.year} onChange={setV("year")} min={1950} max={2100} /></Field>
+            <Field label="KM-Stand"><Input type="number" value={vform.mileage} onChange={setV("mileage")} min={0} /></Field>
           </div>
-        )}
-        <div className="flex gap-3 mt-6">
-          <Button onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending}>
-            {saveMutation.isPending ? "Speichert…" : "Speichern"}
-          </Button>
-          <Button variant="secondary" onClick={() => setModalOpen(false)}>Abbrechen</Button>
-        </div>
+          <div className="flex gap-3 mt-6">
+            <Button type="submit" disabled={vehicleMutation.isPending}>
+              {vehicleMutation.isPending ? "Speichert…" : "Fahrzeug speichern"}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setVehicleModalFor(null)}>Abbrechen</Button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

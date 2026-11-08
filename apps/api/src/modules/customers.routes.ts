@@ -4,20 +4,38 @@ import { prisma } from "../lib/prisma.js";
 import { audit } from "../lib/audit.js";
 import { authGuard } from "../plugins/auth.js";
 
-const customerSchema = z.object({
-  type: z.enum(["PRIVATE", "COMPANY", "FLEET"]).default("PRIVATE"),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  company: z.string().optional(),
-  email: z.string().email().optional().or(z.literal("")),
-  phone: z.string().optional(),
-  street: z.string().optional(),
-  zip: z.string().optional(),
-  city: z.string().optional(),
-  notes: z.string().optional(),
-  emailMarketingConsent: z.boolean().optional(),
-  consentSource: z.string().optional(),
+const vehicleInputSchema = z.object({
+  licensePlate: z.string().trim().min(1),
+  brand: z.string().trim().min(1),
+  model: z.string().trim().min(1),
+  year: z.coerce.number().int().min(1950).max(2100).optional(),
+  mileage: z.coerce.number().int().min(0).optional(),
 });
+
+const customerSchema = z
+  .object({
+    type: z.enum(["PRIVATE", "COMPANY", "FLEET"]).default("PRIVATE"),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+    company: z.string().optional(),
+    email: z.string().email().optional().or(z.literal("")),
+    phone: z.string().optional(),
+    street: z.string().optional(),
+    zip: z.string().optional(),
+    city: z.string().optional(),
+    notes: z.string().optional(),
+    emailMarketingConsent: z.boolean().optional(),
+    consentSource: z.string().optional(),
+    vehicle: vehicleInputSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.type === "PRIVATE" && !(data.firstName ?? "").trim() && !(data.lastName ?? "").trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["lastName"], message: "Vor- oder Nachname ist erforderlich" });
+    }
+    if (data.type !== "PRIVATE" && !(data.company ?? "").trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["company"], message: "Firma ist erforderlich" });
+    }
+  });
 
 const listQuery = z.object({
   q: z.string().optional(),
@@ -78,11 +96,12 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/customers", async (req) => {
-    const { emailMarketingConsent, consentSource, ...data } = customerSchema.parse(req.body);
+    const { emailMarketingConsent, consentSource, vehicle, ...data } = customerSchema.parse(req.body);
     const customer = await prisma.customer.create({
       data: {
         ...data,
         email: data.email || null,
+        ...(vehicle ? { vehicles: { create: vehicle } } : {}),
         consents: emailMarketingConsent
           ? {
               create: {
@@ -95,13 +114,16 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
           : undefined,
       },
     });
-    await audit(req.user!.id, "CREATE", "Customer", customer.id, { name: customer.company ?? customer.lastName });
+    await audit(req.user!.id, "CREATE", "Customer", customer.id, {
+      name: customer.company ?? customer.lastName,
+      ...(vehicle ? { plate: vehicle.licensePlate } : {}),
+    });
     return customer;
   });
 
   app.put("/customers/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const { emailMarketingConsent, consentSource, ...data } = customerSchema.parse(req.body);
+    const { emailMarketingConsent, consentSource, vehicle: _vehicle, ...data } = customerSchema.parse(req.body);
     const existing = await prisma.customer.findUnique({ where: { id }, include: { consents: true } });
     if (!existing) return reply.code(404).send({ error: "Kunde nicht gefunden" });
 
