@@ -545,6 +545,104 @@ async function main() {
   }
   console.log(`✓ Auftragsbuch: ${auftraege.length} Aufträge über alle Status (inkl. Rechnungen/Zahlungen/Zeiten)`);
 
+
+  // ── Termin→Auftrag: JEDE erledigte Woche wird fakturiert ────────────────────
+  const positionen: Record<string, Array<{ type: "LABOR" | "PART" | "EXTERNAL" | "FLAT"; description: string; qty: number; unit: string; unitPrice: number }>> = {
+    "Bremsen vorne + hinten": [{ type: "LABOR", description: "Bremsen vorne + hinten", qty: 1.5, unit: "h", unitPrice: 145 }, { type: "PART", description: "Bremsbeläge + Scheiben", qty: 1, unit: "Satz", unitPrice: 202 }],
+    "Diagnose Motorleuchte": [{ type: "LABOR", description: "Fehlersuche Motorsteuerung", qty: 1, unit: "h", unitPrice: 155 }],
+    "Service mit Ölwechsel": [{ type: "LABOR", description: "Service mit Ölwechsel", qty: 1, unit: "h", unitPrice: 140 }, { type: "PART", description: "Öl + Filter", qty: 1, unit: "Satz", unitPrice: 68 }],
+    "Winterreifen montieren (Hotel-Satz)": [{ type: "LABOR", description: "Räder wechseln (Hotel-Satz), wuchten", qty: 0.5, unit: "h", unitPrice: 95 }],
+    "Fehlersuche Startprobleme": [{ type: "LABOR", description: "Fehlersuche Startsystem", qty: 0.75, unit: "h", unitPrice: 155 }, { type: "PART", description: "Starterbatterie", qty: 1, unit: "Stk", unitPrice: 165 }],
+    "Kupplung prüfen + Bremsdienst": [{ type: "LABOR", description: "Kupplungsprüfung + Bremsdienst", qty: 1.5, unit: "h", unitPrice: 145 }],
+    "Winterreifen montieren": [{ type: "LABOR", description: "Räder wechseln, wuchten, Druck", qty: 0.5, unit: "h", unitPrice: 95 }],
+    "Inspektion Flottenfahrzeug": [{ type: "LABOR", description: "Inspektion", qty: 1.5, unit: "h", unitPrice: 145 }, { type: "PART", description: "Öl + Filter", qty: 1, unit: "Satz", unitPrice: 74 }],
+    "Zahnriemen + Wasserpumpe (Tag 1)": [{ type: "LABOR", description: "Zahnriemen + Pumpe (Aufwand gesamt)", qty: 4, unit: "h", unitPrice: 145 }],
+    "Elektrik: Fensterheber hinten": [{ type: "LABOR", description: "Fensterheber hinten instand setzen", qty: 1, unit: "h", unitPrice: 150 }],
+    "Achsvermessung nach Bordstein-Kontakt": [{ type: "LABOR", description: "Achsvermessung", qty: 0.75, unit: "h", unitPrice: 145 }],
+    "Stossdämpfer hinten (Leihwagen läuft)": [{ type: "LABOR", description: "Stossdämpfer hinten", qty: 2.5, unit: "h", unitPrice: 145 }, { type: "PART", description: "Stossdämpfer-Set", qty: 1, unit: "Satz", unitPrice: 234 }],
+    "Sommer→Winter + Einlagerung Hotel": [{ type: "LABOR", description: "Räder wechseln + einlagern", qty: 0.5, unit: "h", unitPrice: 95 }],
+    "MFK-Vorbereitung": [{ type: "LABOR", description: "MFK-Vorbereitung + Prüfliste", qty: 1, unit: "h", unitPrice: 135 }],
+    "Service klein": [{ type: "LABOR", description: "Kleiner Service", qty: 1, unit: "h", unitPrice: 135 }, { type: "PART", description: "Öl + Filter", qty: 1, unit: "Satz", unitPrice: 62 }],
+    "Fehlersuche CAN-Bus": [{ type: "LABOR", description: "CAN-Bus Diagnose", qty: 1.5, unit: "h", unitPrice: 155 }],
+    "Räder waschen + Hotelplatz zuweisen": [{ type: "LABOR", description: "Räder reinigen + einlagern", qty: 0.5, unit: "h", unitPrice: 65 }],
+    "Bremsen hinten + Achsvermessung": [{ type: "LABOR", description: "Bremsen hinten + Achsvermessung", qty: 2, unit: "h", unitPrice: 145 }, { type: "PART", description: "Bremsbeläge hinten", qty: 1, unit: "Satz", unitPrice: 78 }],
+    "Nachkontrolle Service": [{ type: "LABOR", description: "Nachkontrolle", qty: 0.5, unit: "h", unitPrice: 135 }],
+    "Reifendruck prüfen (Transporter)": [{ type: "LABOR", description: "Reifendruck + Zustand", qty: 0.5, unit: "h", unitPrice: 65 }],
+    "Airbag-Steuergerät Rücksetzen": [{ type: "LABOR", description: "Steuergerät rücksetzen", qty: 0.5, unit: "h", unitPrice: 155 }],
+    "Nachkontrolle Auspuff": [{ type: "LABOR", description: "Nachkontrolle Abgasanlage", qty: 0.5, unit: "h", unitPrice: 135 }],
+    "Winterreifen Ruhedruck prüfen": [{ type: "LABOR", description: "Ruhedruck prüfen/korrigieren", qty: 0.25, unit: "h", unitPrice: 65 }],
+    "Lichttest + Beleuchtung": [{ type: "LABOR", description: "Lichteinstellung", qty: 0.5, unit: "h", unitPrice: 95 }],
+    "Reifendruck-Sensor einlernen": [{ type: "LABOR", description: "TPMS einlernen", qty: 0.75, unit: "h", unitPrice: 150 }],
+    "Nachkontrolle Winterreifen": [{ type: "LABOR", description: "Drehmomente nachziehen", qty: 0.25, unit: "h", unitPrice: 65 }],
+    "Reifen-Einlagerung nachholen": [{ type: "LABOR", description: "Räder einlagern", qty: 0.25, unit: "h", unitPrice: 65 }],
+    "Klimaanlage nachfüllen": [{ type: "LABOR", description: "Klimaservice", qty: 1, unit: "h", unitPrice: 150 }, { type: "PART", description: "Kältemittel", qty: 1, unit: "kg", unitPrice: 89 }],
+    "Elektrik: Ladebuchse Prüflauf": [{ type: "LABOR", description: "Ladebuchse prüfen", qty: 1, unit: "h", unitPrice: 155 }],
+    "Wischwasserheizung + Frontscheibe": [{ type: "LABOR", description: "Wischwasserheizung", qty: 0.75, unit: "h", unitPrice: 140 }],
+    "Räder wuchten + Einlagerung": [{ type: "LABOR", description: "Wuchten + Einlagern", qty: 0.5, unit: "h", unitPrice: 95 }],
+    "Winterreifen Flotte": [{ type: "LABOR", description: "Räder wechseln Flotte", qty: 0.5, unit: "h", unitPrice: 95 }],
+    "Reifen-Offerte Flotte (Beratung)": [{ type: "LABOR", description: "Reifenberatung + Offerte", qty: 0.5, unit: "h", unitPrice: 0 }],
+  };
+  const mechanikerPool = ["Jason Pagnin", "Cedric Holenstein", "Marco Eichmann", "Gianni Verrilli", "Marcel Steinemann", "Besim Sherifi", "Elijah Jäger", "Roger Willi", "Elvedin Memedoski", "Florin Duttlinger"];
+  const resByName = Object.fromEntries((await prisma.resource.findMany({ where: { active: true } })).map((r) => [r.name, r]));
+  const erledigte = await prisma.appointment.findMany({
+    where: { status: "DONE", workOrder: { is: null } },
+    include: { vehicle: true },
+    orderBy: { start: "asc" },
+  });
+  let taOrder = 0, taInvoice = 0;
+  for (let i = 0; i < erledigte.length; i++) {
+    const a = erledigte[i];
+    const reasonBase = (a.reason ?? "Arbeit").split(" (")[0].trim();
+    const lines = positionen[reasonBase] ?? positionen[a.reason ?? ""] ?? [{ type: "LABOR" as const, description: a.reason ?? "Arbeit", qty: 1, unit: "h", unitPrice: 145 }];
+    let mechName = a.resourceId ? (Object.keys(res).find((n) => res[n] === a.resourceId) ?? "") : "";
+    if (!mechName || resByName[mechName]?.type !== "MECHANIC") {
+      const pool = mechanikerPool.filter((m) => (resByName[m]?.skillLevel ?? 0) >= (a.requiredSkill || 1));
+      mechName = pool[i % Math.max(pool.length, 1)] ?? mechanikerPool[i % mechanikerPool.length];
+    }
+    const mod = i % 10;
+    const status = mod < 6 ? "PAID" : mod < 9 ? "INVOICED" : "READY";
+    const order = await prisma.workOrder.create({
+      data: {
+        number: await nextDocNumber("order"),
+        customerId: a.customerId, vehicleId: a.vehicleId, appointmentId: a.id,
+        resourceId: resByName[mechName]?.id ?? null,
+        requiredSkill: Math.max(1, a.requiredSkill || 1),
+        reportedIssues: a.reason ?? "Termin",
+        status, laborRate: Number(settings.defaultLaborRate),
+        lines: { create: lines.map((l, j) => ({ ...l, vatRate: vat, position: j })) },
+      },
+      include: { lines: true },
+    });
+    const totals = computeTotals(order.lines, settings.vatScheme === "SMALL_BUSINESS" ? "SMALL_BUSINESS" : "STANDARD");
+    await prisma.workOrder.update({ where: { id: order.id }, data: { actualNet: totals.net } });
+    const minutes = Math.max(30, Math.round((lines.find((l) => l.type === "LABOR")?.qty ?? 1) * 60));
+    await prisma.timeEntry.create({ data: { orderId: order.id, userId: userByName[mechName] ?? userByName["Jorge Fernandez"], minutes, startedAt: a.start, note: a.reason ?? undefined } });
+    if (status !== "READY") {
+      const invLines = lines.map((l) => ({ ...l, vatRate: vat }));
+      const invTotals = computeTotals(invLines, settings.vatScheme === "SMALL_BUSINESS" ? "SMALL_BUSINESS" : "STANDARD");
+      const invDate = new Date(a.end);
+      const due = new Date(invDate);
+      due.setDate(due.getDate() + settings.paymentTermsDays);
+      const paid = status === "PAID";
+      const invoice = await prisma.invoice.create({
+        data: {
+          number: await nextDocNumber("invoice"),
+          type: "INVOICE", customerId: a.customerId, vehicleId: a.vehicleId, orderId: order.id,
+          status: paid ? "PAID" : "SENT", date: invDate, dueDate: due,
+          totalNet: invTotals.net, totalVat: invTotals.vat, total: invTotals.total,
+          vatScheme: settings.vatScheme, paidTotal: paid ? invTotals.total : 0,
+          lines: { create: invLines.map((l, j) => ({ ...l, position: j })) },
+        },
+      });
+      if (paid) {
+        await prisma.payment.create({ data: { invoiceId: invoice.id, amount: invTotals.total, method: "QR_INVOICE", date: invDate } });
+      }
+      taInvoice++;
+    }
+    taOrder++;
+  }
+  console.log(`✓ Termin-Aufträge: ${taOrder} Aufträge aus erledigten Terminen (${taInvoice} fakturiert)`);
+
   // Leihwagen-Läufe auf die passenden Aufträge bücheln
   const loanLinks: Array<{ loanerPlate: string; reason: string }> = [
     { loanerPlate: "SH 100125", reason: "Zahnriemen + Wasserpumpe" },
