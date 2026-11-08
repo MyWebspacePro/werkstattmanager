@@ -2,12 +2,15 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiDownload } from "../lib/api.js";
 import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, Textarea, formatCHF } from "../components/ui.js";
+import { SKILL_LABELS, SKILL_SHORT } from "../lib/skills.js";
 
 interface Line { type: "LABOR" | "PART" | "EXTERNAL" | "FLAT"; description: string; qty: number; unit: string; unitPrice: number; vatRate: number; partId?: string }
 interface WorkOrder {
   id: string; number: string; status: string; customerId: string; vehicleId: string; laborRate: string;
   reportedIssues?: string | null; internalNotes?: string | null; plannedNet: string; actualNet: string;
   quote?: { id: string; number: string } | null;
+  resourceId?: string | null; requiredSkill?: number;
+  resource?: { id: string; name: string; jobTitle?: string | null } | null;
   lines: { id: string; type: string; description: string; qty: string; unit: string; unitPrice: string; vatRate: string; partId?: string | null }[];
   customer: { firstName?: string | null; lastName?: string | null; company?: string | null; phone?: string | null };
   vehicle: { licensePlate: string; brand: string; model: string };
@@ -23,7 +26,7 @@ const statusColor: Record<string, "blue" | "yellow" | "purple" | "green" | "slat
   OPEN: "blue", PARTS_ORDERED: "yellow", IN_PROGRESS: "purple", READY: "green", INVOICED: "slate", PAID: "green",
 };
 
-const emptyOrder = { customerId: "", vehicleId: "", reportedIssues: "", internalNotes: "" };
+const emptyOrder = { customerId: "", vehicleId: "", resourceId: "", requiredSkill: 1, reportedIssues: "", internalNotes: "" };
 
 export default function WorkOrdersPage() {
   const qc = useQueryClient();
@@ -41,6 +44,7 @@ export default function WorkOrdersPage() {
   });
   const { data: customers } = useQuery({ queryKey: ["customers-all"], queryFn: () => api<{ items: Customer[] }>("/customers?take=100") });
   const { data: parts } = useQuery({ queryKey: ["parts-all"], queryFn: () => api<{ items: { id: string; number: string; name: string; stock: number; salePrice: string }[] }>("/parts?take=500") });
+  const { data: resources } = useQuery({ queryKey: ["resources"], queryFn: () => api<{ id: string; name: string; type: string; jobTitle?: string | null; skillLevel: number }[]>("/resources") });
   const [pageError, setPageError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -57,7 +61,7 @@ export default function WorkOrdersPage() {
     try {
       const wo = await api<WorkOrder>(`/workorders/${id}`);
       setSelected(wo);
-      setForm({ customerId: wo.customerId, vehicleId: wo.vehicleId, reportedIssues: wo.reportedIssues ?? "", internalNotes: wo.internalNotes ?? "" });
+      setForm({ ...emptyOrder, customerId: wo.customerId, vehicleId: wo.vehicleId, resourceId: wo.resourceId ?? "", requiredSkill: wo.requiredSkill ?? 1, reportedIssues: wo.reportedIssues ?? "", internalNotes: wo.internalNotes ?? "" });
       setLines(wo.lines.map((l) => ({ type: l.type as Line["type"], description: l.description, qty: Number(l.qty), unit: l.unit, unitPrice: Number(l.unitPrice), vatRate: Number(l.vatRate), partId: l.partId ?? undefined })));
       setSaved(false);
       setPageError(null);
@@ -115,6 +119,7 @@ export default function WorkOrdersPage() {
       <style>body{font-family:-apple-system,Arial,sans-serif;padding:40px;color:#111}h1{font-size:20px}table{width:100%;border-collapse:collapse;margin-top:16px}td,th{border:1px solid #999;padding:8px;text-align:left}.meta{margin-top:8px;color:#333}</style></head><body>
       <h1>Auftrag ${selected.number}</h1>
       <div class="meta"><strong>${cust}</strong> · ${selected.vehicle.licensePlate} · ${selected.vehicle.brand} ${selected.vehicle.model}</div>
+      <div class="meta">Zugewiesen: <strong>${form.resourceId ? (resources?.find((r) => r.id === form.resourceId)?.name ?? "—") : "offen"}</strong> · Qualifikation: ${SKILL_SHORT[form.requiredSkill] ?? "—"}</div>
       ${selected.reportedIssues ? `<div class="meta"><em>Kundenauftrag:</em> ${selected.reportedIssues}</div>` : ""}
       <table><tr><th>Pos</th><th>Beschreibung</th><th>Menge</th><th>Art</th></tr>${rows}</table>
       <div class="meta" style="margin-top:24px">Erledigt: ☐ &nbsp; Kontrollschild: ☐ &nbsp; Abholung: ☐ &nbsp; Unterschrift Kunde: ____________</div>
@@ -177,7 +182,7 @@ export default function WorkOrdersPage() {
             🔒 Dieser Auftrag ist {selected.status === "INVOICED" ? "fakturiert" : selected.status === "PAID" ? "bezahlt" : "annulliert"} und gesperrt. Korrekturen nur über Kreditnota (Rechnungen).
           </div>
         )}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Field label="Kunde / Fahrzeug">
             <Select value={form.vehicleId} onChange={(e) => {
               for (const c of customers?.items ?? []) {
@@ -199,6 +204,25 @@ export default function WorkOrdersPage() {
             <Select value={selected?.status ?? "OPEN"} disabled={!selected}
               onChange={(e) => selected && statusMutation.mutate({ id: selected.id, status: e.target.value })}>
               {statuses.map((s) => <option key={s} value={s}>{statusLabel[s]}</option>)}
+            </Select>
+          </Field>
+          <Field label="Benötigte Qualifikation">
+            <Select value={form.requiredSkill} onChange={(e) => {
+              const req = Number(e.target.value);
+              setForm((f) => {
+                const current = resources?.find((r) => r.id === f.resourceId);
+                return { ...f, requiredSkill: req, resourceId: current && current.skillLevel < req ? "" : f.resourceId };
+              });
+            }}>
+              {[1, 2, 3].map((lvl) => <option key={lvl} value={lvl}>{SKILL_LABELS[lvl]}</option>)}
+            </Select>
+          </Field>
+          <Field label="Zugewiesen an">
+            <Select value={form.resourceId} onChange={(e) => setForm((f) => ({ ...f, resourceId: e.target.value }))}>
+              <option value="">— noch offen —</option>
+              {(resources ?? []).filter((r) => r.type === "MECHANIC" && r.skillLevel >= form.requiredSkill).map((r) => (
+                <option key={r.id} value={r.id}>{r.name}{r.jobTitle ? ` — ${r.jobTitle}` : ""}</option>
+              ))}
             </Select>
           </Field>
         </div>

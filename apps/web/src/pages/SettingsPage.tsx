@@ -5,7 +5,7 @@ import { Button, Card, ErrorMsg, Field, Input, Select, Textarea } from "../compo
 import { useAuth } from "../lib/auth.js";
 
 interface AppUser {
-  id: string; email: string; name: string; role: "ADMIN" | "STAFF" | "MECHANIC"; active: boolean; createdAt: string;
+  id: string; email: string; name: string; jobTitle?: string | null; role: "ADMIN" | "STAFF" | "MECHANIC"; active: boolean; createdAt: string;
 }
 
 function PasswordCard() {
@@ -71,10 +71,10 @@ function UsersCard() {
   const create = useMutation({
     mutationFn: (body: { email: string; name: string; password: string; role: string }) =>
       api("/users", { method: "POST", body: JSON.stringify(body) }),
-    onSuccess: () => { invalidate(); setNewUser({ name: "", email: "", password: "", role: "STAFF" }); },
+    onSuccess: () => { invalidate(); setNewUser({ name: "", email: "", jobTitle: "", password: "", role: "STAFF" }); },
   });
 
-  const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "STAFF" });
+  const [newUser, setNewUser] = useState({ name: "", email: "", jobTitle: "", password: "", role: "STAFF" });
 
   const askResetPassword = (u: AppUser) => {
     const pw = window.prompt(`Neues Passwort für ${u.name} (min. 8 Zeichen):`);
@@ -100,7 +100,7 @@ function UsersCard() {
           <tbody>
             {(users ?? []).map((u) => (
               <tr key={u.id} className="border-b last:border-0">
-                <td className="py-2 pr-3 font-medium">{u.name}</td>
+                <td className="py-2 pr-3 font-medium">{u.name}{u.jobTitle ? <span className="block text-xs text-slate-400">{u.jobTitle}</span> : null}</td>
                 <td className="py-2 pr-3 text-slate-500">{u.email}</td>
                 <td className="py-2 pr-3">
                   <Select
@@ -139,6 +139,7 @@ function UsersCard() {
         className="mt-5 grid grid-cols-2 md:grid-cols-5 gap-3 items-end border-t pt-4"
       >
         <Field label="Name"><Input value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} required minLength={2} /></Field>
+        <Field label="Funktion"><Input value={newUser.jobTitle} onChange={(e) => setNewUser({ ...newUser, jobTitle: e.target.value })} placeholder="z.B. Automechatroniker" /></Field>
         <Field label="E-Mail"><Input type="email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required /></Field>
         <Field label="Passwort (min. 8)"><Input type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} required minLength={8} /></Field>
         <Field label="Rolle">

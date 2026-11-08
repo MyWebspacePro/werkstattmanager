@@ -24,6 +24,7 @@ model User {
   email        String   @unique
   passwordHash String
   name         String
+  jobTitle     String?  // z.B. Werkstattleiter, Automechatroniker — Anzeige im Team/Planer
   role         Role     @default(STAFF)
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
@@ -174,12 +175,15 @@ enum ResourceType {
 }
 
 model Resource {
-  id     String       @id @default(cuid())
-  name   String
-  type   ResourceType @default(LIFT)
-  active Boolean      @default(true)
+  id         String       @id @default(cuid())
+  name       String
+  type       ResourceType @default(LIFT)
+  active     Boolean      @default(true)
+  jobTitle   String?      // z.B. Automobildiagnostiker — nur für MECHANIC-Ressourcen
+  skillLevel Int          @default(1) // 0=Bühne/Ressource · 1=Automobilfachmann · 2=Automechatroniker · 3=Diagnostiker
 
   appointments Appointment[]
+  workOrders   WorkOrder[]
 }
 
 enum AppointmentStatus {
@@ -202,6 +206,7 @@ model Appointment {
   start       DateTime
   end         DateTime
   status      AppointmentStatus @default(CONFIRMED)
+  requiredSkill Int             @default(0) // 0=egal · 1=Fachmann · 2=Automechatroniker · 3=Diagnostiker
   reason      String?
   notes       String?
   createdAt   DateTime          @default(now())
@@ -294,6 +299,9 @@ model WorkOrder {
   quoteId        String? @unique
   quote          Quote?          @relation(fields: [quoteId], references: [id])
   status         WorkOrderStatus @default(OPEN)
+  resourceId     String?         // Zugewiesener Mechaniker (Resource vom Typ MECHANIC)
+  resource       Resource?       @relation(fields: [resourceId], references: [id])
+  requiredSkill  Int             @default(1) // Mindestqualifikation für diesen Auftrag
   laborRate      Decimal         @default(140) @db.Decimal(10, 2) // Snapshot beim Anlegen
   reportedIssues String?         // Kundenschilderung (Mängelrüge-Dokumentation)
   internalNotes  String?

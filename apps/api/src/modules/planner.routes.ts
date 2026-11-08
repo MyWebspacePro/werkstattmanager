@@ -13,6 +13,7 @@ const appointmentFields = z.object({
   reason: z.string().optional(),
   notes: z.string().optional(),
   status: z.enum(["REQUESTED", "CONFIRMED", "IN_PROGRESS", "DONE", "CANCELLED"]).default("CONFIRMED"),
+  requiredSkill: z.coerce.number().int().min(0).max(3).default(0),
 });
 
 const appointmentSchema = appointmentFields.refine((d) => d.end > d.start, {
@@ -75,7 +76,7 @@ export async function plannerRoutes(app: FastifyInstance): Promise<void> {
       include: {
         customer: { select: { id: true, firstName: true, lastName: true, company: true, phone: true } },
         vehicle: { select: { id: true, licensePlate: true, brand: true, model: true } },
-        resource: { select: { id: true, name: true, type: true } },
+        resource: { select: { id: true, name: true, jobTitle: true, skillLevel: true } },
         workOrder: { select: { id: true, number: true, status: true } },
       },
     });

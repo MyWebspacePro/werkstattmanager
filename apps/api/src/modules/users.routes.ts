@@ -8,12 +8,14 @@ import { authGuard, requireRole } from "../plugins/auth.js";
 const createSchema = z.object({
   email: z.string().email(),
   name: z.string().min(2),
+  jobTitle: z.string().optional(),
   password: z.string().min(8, "Mindestens 8 Zeichen"),
   role: z.enum(["ADMIN", "STAFF", "MECHANIC"]),
 });
 
 const updateSchema = z.object({
   name: z.string().min(2).optional(),
+  jobTitle: z.string().optional(),
   role: z.enum(["ADMIN", "STAFF", "MECHANIC"]).optional(),
   active: z.boolean().optional(),
 });
@@ -22,7 +24,7 @@ const resetPasswordSchema = z.object({
   password: z.string().min(8, "Mindestens 8 Zeichen"),
 });
 
-const userSelect = { id: true, email: true, name: true, role: true, active: true, createdAt: true } as const;
+const userSelect = { id: true, email: true, name: true, jobTitle: true, role: true, active: true, createdAt: true } as const;
 
 export async function userRoutes(app: FastifyInstance): Promise<void> {
   app.get("/users", { preHandler: [authGuard, requireRole("ADMIN")] }, async () => {
@@ -35,7 +37,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) return reply.code(409).send({ error: "E-Mail ist bereits vergeben" });
     const user = await prisma.user.create({
-      data: { email, name: body.name, role: body.role, passwordHash: await bcrypt.hash(body.password, 10) },
+      data: { email, name: body.name, jobTitle: body.jobTitle, role: body.role, passwordHash: await bcrypt.hash(body.password, 10) },
       select: userSelect,
     });
     await audit(req.user!.id, "CREATE", "User", user.id);
