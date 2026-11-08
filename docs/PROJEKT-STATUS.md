@@ -58,6 +58,11 @@ Node 22 · npm workspaces · `.env` liegt am Root UND in `apps/api/` (Prisma/tsx
 - Update-Prozedur + Notfall-Wiederherstellung: `VPS-UEBERGABE.md` (auch für Hermes)
 - `deploy.sh` = Ein-Befehl-Setup für leere Server · Git-Push-Hänger → `GIT_TERMINAL_PROMPT=0 git push https://x-access-token:$(gh auth token)@github.com/MyWebspacePro/werkstattmanager.git main`
 
+**Welle 1 nach Funktions-Audit (2026-11-08, deployed):**
+- Funktions-Audit mit 3 Subagenten → **[FUNKTIONS-AUDIT.md](FUNKTIONS-AUDIT.md)** (Befund: viele fertige Backend-Endpunkte waren im Frontend nie erreichbar)
+- Neu: KV-Verwaltungsseite + KV-PDF · Teile-Picker auf Aufträgen (Lagerabbuchung via UI) · Kunden-Dossier · Fahrzeugakte (Bearbeiten/Archiv) · Kreditnota (GS-Kreis, negative Beträge) · Mahn-PDF/-E-Mail + Mahnstufen konfigurierbar · Lieferanten-Datenverlust-Fix · Auftrags-Statusschutz · minStock-Nachbestell-Fix
+- **Noch offen aus dem Audit:** Zeiterfassung (TimeEntry tot), Nachbestell-Wesen/UI, Leihwagen-/Reifenhotel-Fakturierung, Annahme-Daten (KM/Tankstand/Fotos), UI-Politur-Welle (Form-Wrap aller Modals, Datums-Bug Planer, Escape/Backdrop, Touch-Targets, Mobile-Sidebar)
+
 **Kunden-Fixes (2026-11-08, deployed):**
 - Leerer Kunde nicht mehr möglich: Backend-Pflichtvalidierung (Privat: Vor-/Nachname, Firma/Flotte: Firma) + required-Felder im Modal
 - Kennzeichen: Fahrzeug-Sektion im Neuer-Kunde-Modal (Kunde+Fahrzeug transaktional in einem Call) + «+ Fahrzeug»-Button pro Kundenzeile
