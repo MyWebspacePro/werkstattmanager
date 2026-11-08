@@ -24,6 +24,13 @@ const settingsSchema = z.object({
   quotePrefix: z.string().min(1).default("KV"),
   orderPrefix: z.string().min(1).default("AO"),
   paymentTermsDays: z.coerce.number().int().min(0).max(120).default(30),
+  creditPrefix: z.string().min(1).default("GS"),
+  reminderLevel1Days: z.coerce.number().int().min(1).max(180).default(14),
+  reminderLevel2Days: z.coerce.number().int().min(1).max(180).default(14),
+  reminderLevel3Days: z.coerce.number().int().min(1).max(180).default(14),
+  reminderFee1: z.coerce.number().min(0).default(0),
+  reminderFee2: z.coerce.number().min(0).default(20),
+  reminderFee3: z.coerce.number().min(0).default(30),
   invoiceFooter: z.string().default(""),
 });
 

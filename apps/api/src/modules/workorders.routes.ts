@@ -125,6 +125,10 @@ export async function workOrderRoutes(app: FastifyInstance): Promise<void> {
     const body = orderBody.partial().parse(req.body);
     const existing = await prisma.workOrder.findUnique({ where: { id }, include: { lines: true } });
     if (!existing) return reply.code(404).send({ error: "Auftrag nicht gefunden" });
+    // Statusschutz: fakturierte/abgeschlossene Aufträge sind gesperrt (Rechnung wäre sonst ein falscher Snapshot)
+    if (["INVOICED", "PAID", "CANCELLED"].includes(existing.status)) {
+      return reply.code(409).send({ error: `Auftrag ist ${existing.status} und damit gesperrt — Korrekturen nur über Kreditnota` });
+    }
     const settings = await prisma.setting.findUniqueOrThrow({ where: { id: 1 } });
 
     await prisma.$transaction(async (tx) => {
@@ -169,6 +173,15 @@ export async function workOrderRoutes(app: FastifyInstance): Promise<void> {
   app.patch("/workorders/:id/status", async (req, reply) => {
     const { id } = req.params as { id: string };
     const { status } = statusSchema.parse(req.body);
+    const current = await prisma.workOrder.findUnique({ where: { id } });
+    if (!current) return reply.code(404).send({ error: "Auftrag nicht gefunden" });
+    // Reopening blockieren: nur INVOICED → PAID ist erlaubt, sonst nichts aus abgeschlossenen Zuständen raus
+    if (["INVOICED", "PAID", "CANCELLED"].includes(current.status)) {
+      const allowed = current.status === "INVOICED" && status === "PAID";
+      if (!allowed) {
+        return reply.code(409).send({ error: `Auftrag ist ${current.status} — Status kann nur über Kreditnota/Storno geändert werden` });
+      }
+    }
     const closing = status === "INVOICED" || status === "PAID" || status === "CANCELLED";
     const order = await prisma.workOrder.update({
       where: { id },

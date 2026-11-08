@@ -161,3 +161,84 @@ export async function buildInvoicePdf(
   doc.end();
   return done;
 }
+
+/** Mahnungs-PDF: Referenz auf Originalrechnung, Mahnstufe, Gebühr, neuer offener Betrag (kein QR-Teil). */
+export async function buildReminderPdf(
+  invoice: InvoiceWithLines,
+  settings: Settings,
+  level: number,
+  fee: number
+): Promise<Buffer> {
+  const doc = new PDFDocument({ size: "A4", margin: 40, autoFirstPage: false });
+  const chunks: Buffer[] = [];
+  const done = new Promise<Buffer>((resolve) => {
+    const pass = new PassThrough();
+    pass.on("data", (c: Buffer) => chunks.push(c));
+    pass.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.pipe(pass);
+  });
+
+  const page = doc.addPage({ size: "A4", margin: 40 });
+  const left = 40;
+  let y = 80;
+
+  // Kopf
+  page.fontSize(16).font("Helvetica-Bold").text(settings.companyName, left, y);
+  page.fontSize(14).font("Helvetica-Bold").fillColor("#b00020").text(
+    level >= 3 ? "3. Mahnung — Letzte Mahnung" : `${level}. Mahnung`,
+    340, y, { width: 215, align: "right" }
+  ).fillColor("#000");
+  y += 22;
+  page.fontSize(9).font("Helvetica");
+  for (const line of [settings.addressLine, `${settings.zip} ${settings.city}`.trim(), settings.phone, settings.email].filter(Boolean)) {
+    page.text(S(line), left, y);
+    y += 12;
+  }
+
+  // Kunde
+  y += 18;
+  const c = invoice.customer;
+  const customerName = c.company ?? [c.firstName, c.lastName].filter(Boolean).join(" ");
+  page.fontSize(11).font("Helvetica-Bold").text(customerName || "Kunde", left, y);
+  y += 15;
+  page.fontSize(10).font("Helvetica");
+  for (const line of [S(c.street), [S(c.zip), S(c.city)].filter(Boolean).join(" ")].filter(Boolean)) {
+    page.text(line, left, y);
+    y += 13;
+  }
+
+  // Anschreiben
+  y += 24;
+  const total = Number(invoice.total);
+  const paid = Number(invoice.paidTotal);
+  const open = total - paid + fee;
+  const daysKey = ("reminderLevel" + level + "Days") as keyof Settings;
+  const days = Number(settings[daysKey]) || 14;
+  page.fontSize(11).font("Helvetica-Bold").text(`Betreff: Rechnung ${invoice.number} vom ${dateDe(invoice.date)}`, left, y);
+  y += 24;
+  page.fontSize(10).font("Helvetica").text(
+    `Sehr geehrte Damen und Herren\n\n` +
+    `Trotz Fälligkeit am ${dateDe(invoice.dueDate)} ist unsere Rechnung ${invoice.number} bis heute ` +
+    `unbezahlt geblieben. Wir müssen daher eine Mahngebühr von CHF ${fee.toFixed(2)} in Rechnung stellen.\n\n` +
+    `Bitte begleichen Sie den offenen Betrag innert ${days} Tagen.`,
+    left, y, { width: 515, lineGap: 3 }
+  );
+
+  // Rekapitulation
+  y += 120;
+  const right = (label: string, value: string, bold = false) => {
+    page.fontSize(10).font(bold ? "Helvetica-Bold" : "Helvetica").text(label, left, y);
+    page.text(value, 340, y, { width: 215, align: "right" });
+    y += 17;
+  };
+  right("Rechnungsbetrag", CHF(total));
+  if (paid > 0) right("Bereits bezahlt", `− ${CHF(paid)}`);
+  if (fee > 0) right(`Mahngebühr (${level}. Mahnung)`, CHF(fee));
+  right("Neu offen", CHF(open), true);
+
+  page.fontSize(8).font("Helvetica");
+  page.text(S(settings.invoiceFooter), left, 780, { width: 515 });
+
+  doc.end();
+  return done;
+}

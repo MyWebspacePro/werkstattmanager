@@ -196,12 +196,13 @@ export async function partsRoutes(app: FastifyInstance): Promise<void> {
     prisma.supplierPriceImport.findMany({ orderBy: { createdAt: "desc" }, take: 20, include: { supplier: { select: { name: true } } } })
   );
 
-  // Nachbestellvorschläge: Teile unter Mindestbestand
-  app.get("/parts/reorder", async () =>
-    prisma.part.findMany({
-      where: { archived: false, stock: { lte: 0 } },
+  // Nachbestellvorschläge: Teile auf oder unter Mindestbestand (Spaltenvergleich in JS — Prisma kann das nicht)
+  app.get("/parts/reorder", async () => {
+    const parts = await prisma.part.findMany({
+      where: { archived: false },
       include: { supplier: { select: { name: true, email: true } } },
       orderBy: { name: "asc" },
-    })
-  );
+    });
+    return parts.filter((p) => Number(p.stock) <= Number(p.minStock));
+  });
 }

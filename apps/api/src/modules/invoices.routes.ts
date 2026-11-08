@@ -5,7 +5,7 @@ import { audit } from "../lib/audit.js";
 import { authGuard, requireRole } from "../plugins/auth.js";
 import { nextDocNumber } from "../lib/numbers.js";
 import { computeTotals } from "../lib/money.js";
-import { buildInvoicePdf } from "../lib/qrbill.js";
+import { buildInvoicePdf, buildReminderPdf } from "../lib/qrbill.js";
 import { renderTemplate, sendMail } from "../lib/mailer.js";
 
 const lineSchema = z.object({
@@ -79,12 +79,16 @@ export async function invoiceRoutes(app: FastifyInstance): Promise<void> {
     const scheme = settings.vatScheme === "SMALL_BUSINESS" ? "SMALL_BUSINESS" : "STANDARD";
 
     let lines = body.lines;
-    if (body.orderId && lines.length === 0) {
+    if (body.orderId && lines.length === 0 && body.type !== "CREDIT_NOTE") {
       const order = await prisma.workOrder.findUniqueOrThrow({ where: { id: body.orderId }, include: { lines: true } });
       lines = order.lines.map((l) => ({
         type: l.type, description: l.description, qty: Number(l.qty), unit: l.unit,
         unitPrice: Number(l.unitPrice), vatRate: Number(l.vatRate),
       }));
+    }
+    // Kreditnota (MWSTG): negative Beträge — Mengen negieren, Totals werden negativ
+    if (body.type === "CREDIT_NOTE") {
+      lines = lines.map((l) => ({ ...l, qty: -Math.abs(Number(l.qty)) }));
     }
     const totals = computeTotals(lines, scheme);
     const dueDate = new Date();
@@ -92,11 +96,11 @@ export async function invoiceRoutes(app: FastifyInstance): Promise<void> {
 
     const invoice = await prisma.invoice.create({
       data: {
-        number: await nextDocNumber("invoice"),
+        number: await nextDocNumber(body.type === "CREDIT_NOTE" ? "credit" : "invoice"),
         type: body.type,
         customerId: body.customerId,
         vehicleId: body.vehicleId ?? null,
-        orderId: body.orderId ?? null,
+        orderId: body.type === "CREDIT_NOTE" ? null : (body.orderId ?? null),
         status: "DRAFT",
         dueDate,
         totalNet: totals.net,
@@ -107,7 +111,7 @@ export async function invoiceRoutes(app: FastifyInstance): Promise<void> {
         lines: { create: lines.map((l, i) => ({ ...l, position: i })) },
       },
     });
-    if (body.orderId) {
+    if (body.orderId && body.type !== "CREDIT_NOTE") {
       await prisma.workOrder.update({ where: { id: body.orderId }, data: { status: "INVOICED" } });
     }
     await audit(req.user!.id, "CREATE", "Invoice", invoice.id, { number: invoice.number });
@@ -152,18 +156,70 @@ export async function invoiceRoutes(app: FastifyInstance): Promise<void> {
     return result;
   });
 
-  // Mahnung erstellen (Level +1) und Status OVERDUE setzen
+  // Mahnung erstellen (Level +1): Mahn-PDF + E-Mail (wenn Kundin/Kunde E-Mail hat), Status OVERDUE
   app.post("/invoices/:id/remind", async (req, reply) => {
     const { id } = req.params as { id: string };
     const invoice = await loadFull(id);
     if (["PAID", "CANCELLED", "CREDITED"].includes(invoice.status)) {
       return reply.code(400).send({ error: "Rechnung ist bereits beglichen/annulliert" });
     }
-    const level = Math.min(invoice.reminderLevel + 1, 3);
-    await prisma.reminder.create({ data: { invoiceId: id, level } });
+    if (invoice.reminderLevel >= 3) {
+      return reply.code(400).send({ error: "Maximal 3 Mahnstufen — Betreibung über Inkasso-Büro" });
+    }
+    const settings = await prisma.setting.findUniqueOrThrow({ where: { id: 1 } });
+    const level = invoice.reminderLevel + 1;
+    const fees = [Number(settings.reminderFee1), Number(settings.reminderFee2), Number(settings.reminderFee3)];
+    const fee = fees[level - 1] ?? 0;
+
+    let sentTo: string | null = null;
+    let warning: string | null = null;
+    const to = invoice.customer.email;
+    if (to) {
+      try {
+        const tpl = await prisma.textTemplate.findUnique({ where: { key: "reminder.email" } });
+        const customerName = invoice.customer.company ?? [invoice.customer.firstName, invoice.customer.lastName].filter(Boolean).join(" ");
+        const unpaid = Number(invoice.total) - Number(invoice.paidTotal) + fee;
+        const vars = {
+          customerName: customerName || "Kunde",
+          invoiceNumber: invoice.number,
+          reminderLevel: String(level),
+          fee: fee.toFixed(2),
+          unpaid: `CHF ${unpaid.toFixed(2)}`,
+          companyName: settings.companyName,
+        };
+        const pdf = await buildReminderPdf(invoice, settings, level, fee);
+        await sendMail(
+          to,
+          renderTemplate(tpl?.subject ?? `{{reminderLevel}}. Mahnung Rechnung {{invoiceNumber}}`, vars),
+          renderTemplate(tpl?.body ?? "", vars),
+          [{ filename: `Mahnung-${invoice.number}.pdf`, content: pdf }],
+        );
+        sentTo = to;
+      } catch (err) {
+        warning = `Mahnung registriert, aber E-Mail-Versand fehlgeschlagen: ${err instanceof Error ? err.message : "unbekannt"}`;
+      }
+    } else {
+      warning = "Kunde hat keine E-Mail-Adresse — Mahnung bitte drucken und per Post senden";
+    }
+
+    await prisma.reminder.create({ data: { invoiceId: id, level, sentTo: sentTo ?? undefined } });
     await prisma.invoice.update({ where: { id }, data: { reminderLevel: level, status: "OVERDUE" } });
-    await audit(req.user!.id, "REMIND", "Invoice", id, { level });
-    return prisma.invoice.findUniqueOrThrow({ where: { id }, include: { reminders: true, payments: true } });
+    await audit(req.user!.id, "REMIND", "Invoice", id, { level, fee, sentTo });
+    return prisma.invoice.findUniqueOrThrow({ where: { id }, include: { reminders: true, payments: true } }).then((r) => ({ ...r, fee, sentTo, warning }));
+  });
+
+  // Mahnungs-PDF herunterladen (letzte Stufe oder ?level=n)
+  app.get("/invoices/:id/reminder-pdf", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const level = Number((req.query as { level?: string }).level) || undefined;
+    const invoice = await loadFull(id);
+    const settings = await prisma.setting.findUniqueOrThrow({ where: { id: 1 } });
+    const l = level ?? Math.max(invoice.reminderLevel, 1);
+    const fees = [Number(settings.reminderFee1), Number(settings.reminderFee2), Number(settings.reminderFee3)];
+    const pdf = await buildReminderPdf(invoice, settings, l, fees[l - 1] ?? 0);
+    reply.header("Content-Type", "application/pdf");
+    reply.header("Content-Disposition", `inline; filename="Mahnung-${invoice.number}.pdf"`);
+    return reply.send(pdf);
   });
 
   // PDF mit QR-Zahlteil herunterladen

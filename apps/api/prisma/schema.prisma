@@ -57,7 +57,16 @@ model Setting {
   quoteNextNumber   Int      @default(1)
   orderPrefix       String   @default("AO")
   orderNextNumber   Int      @default(1)
+  creditPrefix      String   @default("GS") // Kreditnota-Nummernkreis (MWSTG)
+  creditNextNumber  Int      @default(1)
   paymentTermsDays  Int      @default(30)
+  // Mahnwesen: Fristen (Tage nach Fälligkeit) und Gebühren pro Stufe
+  reminderLevel1Days Int     @default(14)
+  reminderLevel2Days Int     @default(14)
+  reminderLevel3Days Int     @default(14)
+  reminderFee1      Decimal  @default(0) @db.Decimal(10, 2)
+  reminderFee2      Decimal  @default(20) @db.Decimal(10, 2)
+  reminderFee3      Decimal  @default(30) @db.Decimal(10, 2)
   invoiceFooter     String   @default("Erfreulich, dass wir Sie mit Ihrem Fahrzeug betreuen durften.")
   updatedAt         DateTime @updatedAt
 }

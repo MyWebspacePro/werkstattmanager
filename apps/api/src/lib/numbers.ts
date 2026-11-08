@@ -1,12 +1,13 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma.js";
 
-type Kind = "invoice" | "quote" | "order";
+type Kind = "invoice" | "quote" | "order" | "credit";
 
 const config: Record<Kind, { prefixKey: keyof Prisma.SettingUncheckedUpdateInput; counterKey: keyof Prisma.SettingUncheckedUpdateInput }> = {
   invoice: { prefixKey: "invoicePrefix", counterKey: "invoiceNextNumber" },
   quote: { prefixKey: "quotePrefix", counterKey: "quoteNextNumber" },
   order: { prefixKey: "orderPrefix", counterKey: "orderNextNumber" },
+  credit: { prefixKey: "creditPrefix", counterKey: "creditNextNumber" },
 };
 
 /**
