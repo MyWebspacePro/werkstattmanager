@@ -46,22 +46,59 @@ export async function plannerRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", authGuard);
 
   // ── Ressourcen (Hebebühnen, Mechaniker, Plätze) ──
-  app.get("/resources", async () =>
-    prisma.resource.findMany({ where: { active: true }, orderBy: [{ type: "asc" }, { name: "asc" }] })
-  );
+  // ?all=1 liefert auch deaktivierte — für die Verwaltung im Planer.
+  app.get("/resources", async (req) => {
+    const { all } = (req.query ?? {}) as { all?: string };
+    return prisma.resource.findMany({
+      where: all === "1" ? undefined : { active: true },
+      orderBy: [{ type: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
+    });
+  });
+
+  const resourceSchema = z.object({
+    name: z.string().trim().min(1),
+    type: z.enum(["LIFT", "MECHANIC", "BAY"]),
+    jobTitle: z.string().trim().max(120).optional(),
+    skillLevel: z.coerce.number().int().min(0).max(3),
+    sortOrder: z.coerce.number().int().min(0).max(9999).optional(),
+    active: z.boolean().optional(),
+  });
 
   app.post(
     "/resources",
-    { preHandler: authGuard },
-    async (req) => {
-      const data = z
-        .object({ name: z.string().min(1), type: z.enum(["LIFT", "MECHANIC", "BAY"]).default("LIFT") })
-        .parse(req.body);
-      const resource = await prisma.resource.create({ data });
-      await audit(req.user!.id, "CREATE", "Resource", resource.id, { name: resource.name });
+    async (req, reply) => {
+      const data = resourceSchema.parse(req.body);
+      // Neue Arbeitsplätze/Mechaniker hinten anreihen, damit die Spaltenreihenfolge
+      // im Planer der Bedien-Reihenfolge folgt.
+      const last = await prisma.resource.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
+      const resource = await prisma.resource.create({
+        data: { ...data, sortOrder: data.sortOrder ?? (last?.sortOrder ?? 0) + 1 },
+      });
+      await audit(req.user!.id, "CREATE", "Resource", resource.id, { name: resource.name, type: resource.type });
       return resource;
     }
   );
+
+  app.put("/resources/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const data = resourceSchema.partial().parse(req.body);
+    const existing = await prisma.resource.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) return reply.code(404).send({ error: "Arbeitsplatz nicht gefunden" });
+    const resource = await prisma.resource.update({ where: { id }, data });
+    await audit(req.user!.id, "UPDATE", "Resource", id, { name: resource.name, active: resource.active });
+    return resource;
+  });
+
+  // Kein Hard-Delete: Termine und Aufträge referenzieren die Ressource.
+  // Deaktivieren blendet sie im Planer aus, die Historie bleibt.
+  app.delete("/resources/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const existing = await prisma.resource.findUnique({ where: { id }, select: { id: true, name: true } });
+    if (!existing) return reply.code(404).send({ error: "Arbeitsplatz nicht gefunden" });
+    const resource = await prisma.resource.update({ where: { id }, data: { active: false } });
+    await audit(req.user!.id, "ARCHIVE", "Resource", id, { name: existing.name });
+    return resource;
+  });
 
   // ── Termine ──
   // Range: ?from=ISO&to=ISO (Kalenderausschnitt) optional resourceId

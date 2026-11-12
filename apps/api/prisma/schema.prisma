@@ -203,6 +203,7 @@ model Resource {
   active     Boolean      @default(true)
   jobTitle   String?      // z.B. Automobildiagnostiker — nur für MECHANIC-Ressourcen
   skillLevel Int          @default(1) // 0=Bühne/Ressource · 1=Automobilfachmann · 2=Automechatroniker · 3=Diagnostiker
+  sortOrder  Int          @default(0) // Reihenfolge der Spuren im Planer (aufsteigend)
 
   appointments         Appointment[]      @relation("AppointmentResource")
   mechanicAppointments Appointment[]      @relation("AppointmentMechanic")
