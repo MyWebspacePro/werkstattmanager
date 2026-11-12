@@ -24,3 +24,6 @@ logs/
 .vscode/
 .zcode/
 *.swp
+
+# Build-Artefakte
+*.tsbuildinfo
