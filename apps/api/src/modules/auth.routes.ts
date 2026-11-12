@@ -15,6 +15,11 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+// Fester bcrypt-Hash (cost 10, wie bei bcrypt.hash(...)) fuer den Vergleich bei
+// unbekannten oder inaktiven Konten. Verhindert, dass die Antwortzeit verraet,
+// welche E-Mail-Adressen in der Werkstatt existieren (User-Enumeration).
+const DUMMY_PASSWORD_HASH = "$2a$10$r2MWaF8cGCRkxo9TIscNnuzXgi0ReIFi2rpb/3icwOfdHXpdIurdS";
+
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   // Brute-Force-Bremse: 5 Fehlversuche pro Minute und E-Mail, dann 429.
   // Ohne das war jedes Konto per Passwortliste angreifbar.
@@ -32,7 +37,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post("/login", { config: { rateLimit: loginRateLimit } }, async (req, reply) => {
     const body = loginSchema.parse(req.body);
     const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
-    if (!user || !user.active || !(await bcrypt.compare(body.password, user.passwordHash))) {
+    // Immer vergleichen — auch bei unbekanntem Konto (Dummy-Hash), damit die
+    // Antwortzeit nicht zwischen "gibt es" und "gibt es nicht" unterscheidet.
+    const passwordOk = await bcrypt.compare(body.password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+    if (!user || !user.active || !passwordOk) {
       return reply.code(401).send({ error: "E-Mail oder Passwort falsch" });
     }
     const tokenUser = { id: user.id, email: user.email, name: user.name, role: user.role };

@@ -24,6 +24,11 @@ export async function buildApp() {
   const app = Fastify({
     logger: { level: process.env.LOG_LEVEL ?? "info" },
     bodyLimit: 10 * 1024 * 1024, // 10 MB (CSV-Imports, später Fotos)
+    // Nur die Infrastruktur-Hops vertrauen (Traefik = 10.0.1.0/24, Projektnetz
+    // = 10.0.4.0/24). public-Clients sind da nie drin, also ist X-Forwarded-For
+    // nicht faelschbar. Ohne trustProxy ignoriert Fastify X-Forwarded-Proto und
+    // erzeugt http://-URLs, obwohl TLS vor Traefik endet.
+    trustProxy: ["10.0.1.0/24", "10.0.4.0/24"],
   });
 
   // global: false -> greift nur, wo eine Route es per config.rateLimit einschaltet.
