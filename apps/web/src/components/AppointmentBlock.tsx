@@ -9,6 +9,8 @@ interface Props {
   height: number;
   /** Kompakt = Wochen-Gantt (weniger Zeilen). */
   compact?: boolean;
+  /** In der Mitarbeiter-Ansicht die Bühne mit anzeigen, in der Arbeitsplatz-Ansicht die Person. */
+  showResource?: boolean;
   draggable?: boolean;
   dragging?: boolean;
   onOpen: (a: PlannerAppointment) => void;
@@ -20,14 +22,16 @@ interface Props {
  * Ein Termin im Raster. Höhe und Position kommen von der Kachel, hier steht nur
  * die Darstellung — Tag- und Wochenansicht teilen sich diesen Block.
  */
-export function AppointmentBlock({ a, top, height, compact, draggable, dragging, onOpen, onDragStart, onDragEnd }: Props) {
+export function AppointmentBlock({ a, top, height, compact, showResource, draggable, dragging, onOpen, onDragStart, onDragEnd }: Props) {
   const meta = statusMeta(a.status);
   const start = fmtTime(new Date(a.start));
   const end = fmtTime(new Date(a.end));
   const plate = a.vehicle?.licensePlate ?? "—";
-  const showTime = compact ? height >= 13 : height >= 26;
-  const showReason = height >= (compact ? 999 : 52) && !!a.reason;
-  const showMechanic = height >= (compact ? 999 : 74);
+  const showTime = height >= 26 || (compact && height >= 13);
+  const showReason = height >= (compact ? 32 : 52) && !!a.reason;
+  const showPerson = height >= (compact ? 48 : 74);
+  const laneLabel = showResource ? (a.resource?.name ? `🛠 ${a.resource.name}` : null) : a.mechanic ? `👤 ${a.mechanic.name}` : null;
+  const showLane = height >= (compact ? 48 : 74) && laneLabel;
 
   return (
     <div
@@ -60,7 +64,8 @@ export function AppointmentBlock({ a, top, height, compact, draggable, dragging,
       <div className="truncate font-semibold">{plate}</div>
       {!compact && <div className="truncate opacity-70">{custName(a)}</div>}
       {showReason && <div className="truncate opacity-60">{a.reason}</div>}
-      {showMechanic && a.mechanic && <div className="truncate opacity-70">👤 {a.mechanic.name}</div>}
+      {showLane && <div className="truncate opacity-70">{laneLabel}</div>}
+      {showPerson && !compact && !showResource && a.resource && <div className="truncate opacity-70">🛠 {a.resource.name}</div>}
     </div>
   );
 }

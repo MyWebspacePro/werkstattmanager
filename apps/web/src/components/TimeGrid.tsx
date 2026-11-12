@@ -90,6 +90,7 @@ export function TimeGrid({ day, lanes, appointments, pxPerMin = 1.15, groupBy, o
                       a={a}
                       top={(startMin - shopStartMin) * pxPerMin}
                       height={duration * pxPerMin - 2}
+                      showResource={groupBy === "mechanic"}
                       draggable={!!onMove}
                       onOpen={onOpen}
                       onDragStart={(e, appt) => drag.begin(e, appt.id, duration)}

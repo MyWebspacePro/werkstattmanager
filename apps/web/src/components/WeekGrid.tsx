@@ -102,6 +102,7 @@ export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.6, groupBy, t
                         top={(startMin - shopStartMin) * pxPerMin}
                         height={duration * pxPerMin - 1.5}
                         compact
+                        showResource={groupBy === "mechanic"}
                         draggable={!!onMove}
                         onOpen={onOpen}
                         onDragStart={(e, appt) => drag.begin(e, appt.id, duration)}
