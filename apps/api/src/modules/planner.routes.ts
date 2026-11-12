@@ -117,8 +117,10 @@ export async function plannerRoutes(app: FastifyInstance): Promise<void> {
     return appointment;
   });
 
-  app.delete("/appointments/:id", async (req) => {
+  app.delete("/appointments/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const existing = await prisma.appointment.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) return reply.code(404).send({ error: "Termin nicht gefunden" });
     const appointment = await prisma.appointment.update({ where: { id }, data: { status: "CANCELLED" } });
     await audit(req.user!.id, "CANCEL", "Appointment", id);
     return appointment;

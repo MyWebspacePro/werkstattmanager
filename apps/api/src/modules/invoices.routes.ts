@@ -274,7 +274,15 @@ export async function invoiceRoutes(app: FastifyInstance): Promise<void> {
       orderBy: { date: "asc" },
       include: { customer: true, payments: true },
     });
-    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    // Schutz gegen CSV-/Formel-Injection: ein Zellwert, der mit = + - @ oder
+    // Tab/CR beginnt, wird von Excel/Sheets als Formel ausgeführt — auch wenn
+    // er in Anführungszeichen steht. Ein vorangestelltes ' nimmt dem Zellwert
+    // die Formelwirkung (in Excel als Text sichtbar). Zahlen (auch negative
+    // Gutschriftsbeträge) bleiben unangetastet.
+    const looksNumeric = /^-?\d+([.,]\d+)?$/;
+    const formulaSafe = (v: string) =>
+      /^[=+\-@\t\r]/.test(v) && !looksNumeric.test(v) ? `'${v}` : v;
+    const esc = (v: string) => `"${formulaSafe(v).replace(/"/g, '""')}"`;
     const rows = [
       ["Datum", "Belegnr", "Typ", "Debitor", "Netto", "MWST", "Total", "Bezahlt", "Offen", "Status"].join(";"),
       ...invoices.map((inv) =>

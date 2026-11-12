@@ -85,16 +85,27 @@ durchgerutscht.
   deshalb `trustProxy` in Fastify und `absolute_redirect off` in nginx.
 - Bestehende Dienste (Coolify, AppFlowy, Gitea, RustDesk, schwarzbrunn) nicht anfassen.
 
-## Bekannte offene Punkte (12.11.2026, nach Pentest)
+## Bekannte offene Punkte (Stand 12.11.2026, nach Pentest)
 
 1. **Admin-Passwort ist `changeme`** — nur der Nutzer kann das ändern. Höchste Priorität.
-2. `DELETE /api/customers` und `/api/vehicles` sind für die Rolle `STAFF` nicht
-   rollengesperrt (Soft-Delete). `users` und `settings` sind ADMIN-only. Klären, ob gewollt.
-3. Unbekannte ID bei DELETE liefert **500** statt 404 und gibt den rohen
-   Prisma-Fehlertext preis (`apps/api/src/app.ts`, Error-Handler).
-4. CSV-Injection im Buchhaltungs-Export: Werte mit führendem `=` werden in Excel
-   als Formel ausgeführt.
-5. Passwort-Policy nur "mindestens 8 Zeichen".
+2. **Bewusst so entschieden (12.11.2026):** Soft-Delete (`DELETE /customers/:id`,
+   `/vehicles/:id`, `/parts/:id`, `/appointments/:id`) ist für **ADMIN + STAFF**
+   freigegeben. `users` und `settings` bleiben ADMIN-only. Grund: das Web-UI hat für
+   Kunden-/Teile-/Termin-Archivierung (noch) keinen Button — ein zusätzlicher
+   Role-Gate hätte die API also nur für ein Feature gesperrt, das niemand nutzt.
+   Wer das ändern will: `requireRole("ADMIN")` als `preHandler` auf die vier
+   DELETE-Routen in `customers.routes.ts`, `vehicles.routes.ts`, `parts.routes.ts`,
+   `planner.routes.ts`. Vorher mit dem Nutzer klären.
+3. ✅ **Erledigt (12.11.2026):** Unbekannte IDs liefern 404 statt 500, und der
+   Error-Handler gibt keine Prisma-/Stack-Details mehr an den Client
+   (`apps/api/src/app.ts`: P2025 → 404, andere Prisma-Fehler → 409 mit generischer
+   Meldung, 5xx → "Interner Fehler"). Details nur noch im Log.
+4. ✅ **Erledigt (12.11.2026):** CSV-Injection im Buchhaltungs-Export
+   (`invoices.routes.ts`, `esc()`): Werte mit führendem `= + - @` bzw. Tab/CR
+   bekommen ein vorangestelltes `'`; reine Zahlen (auch negative Gutschriften)
+   bleiben unverändert.
+5. Passwort-Policy nur "mindestens 8 Zeichen" — vom Nutzer vorerst **bewusst
+   unverändert** gelassen (12.11.2026).
 6. CSP läuft als `Content-Security-Policy-Report-Only` — erst die Browser-Konsole
    prüfen, dann scharf schalten. HSTS bewusst **ohne** `includeSubDomains`
    (aiconso.eu hat weitere Subdomains).

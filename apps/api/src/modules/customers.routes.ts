@@ -155,8 +155,12 @@ export async function customerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Soft-Delete (10-Jahres-Aufbewahrungslogik: Datensätze bleiben erhalten)
-  app.delete("/customers/:id", async (req) => {
+  // Bewusst für ADMIN + STAFF: im Web-UI gibt es dafür (noch) keinen Button,
+  // die Freigabe entspricht dem bisherigen Verhalten (siehe AGENTS.md).
+  app.delete("/customers/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const existing = await prisma.customer.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) return reply.code(404).send({ error: "Kunde nicht gefunden" });
     const customer = await prisma.customer.update({ where: { id }, data: { archived: true } });
     await audit(req.user!.id, "ARCHIVE", "Customer", id);
     return customer;

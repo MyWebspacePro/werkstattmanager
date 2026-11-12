@@ -3,6 +3,7 @@ import type { FastifyError } from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
+import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 import { env } from "./env.js";
 import { authRoutes } from "./modules/auth.routes.js";
@@ -66,9 +67,21 @@ export async function buildApp() {
     if (err.validation) {
       return reply.code(400).send({ error: "Ungültige Anfrage", details: err.message });
     }
+    // Prisma-Fehler: die Meldung nennt Modell- und Operationsdetails
+    // ("No 'Customer' record was found for update.") und darf nicht an den
+    // Client gehen. P2025 = passende Zeile fehlt -> 404.
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      if (err.code === "P2025") {
+        return reply.code(404).send({ error: "Nicht gefunden" });
+      }
+      req.log.error({ prismaCode: err.code }, err.message);
+      return reply.code(409).send({ error: "Datensatz konnte nicht gespeichert werden" });
+    }
     req.log.error(err);
     const status = typeof err.statusCode === "number" ? err.statusCode : 500;
-    return reply.code(status).send({ error: err.message || "Interner Fehler" });
+    // Details (Stack, DB-Treiber, interne IDs) nur in die Logs, nie an den Client.
+    if (status >= 500) return reply.code(500).send({ error: "Interner Fehler" });
+    return reply.code(status).send({ error: err.message || "Fehler" });
   });
 
   await app.register(authRoutes, { prefix: "/api/auth" });

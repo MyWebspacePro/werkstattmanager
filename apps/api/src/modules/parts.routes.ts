@@ -117,8 +117,10 @@ export async function partsRoutes(app: FastifyInstance): Promise<void> {
     return part;
   });
 
-  app.delete("/parts/:id", async (req) => {
+  app.delete("/parts/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const existing = await prisma.part.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) return reply.code(404).send({ error: "Teil nicht gefunden" });
     const part = await prisma.part.update({ where: { id }, data: { archived: true } });
     await audit(req.user!.id, "ARCHIVE", "Part", id);
     return part;

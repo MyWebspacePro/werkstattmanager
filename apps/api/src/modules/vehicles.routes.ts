@@ -66,16 +66,21 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
     return vehicle;
   });
 
-  app.put("/vehicles/:id", async (req) => {
+  app.put("/vehicles/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     const { customerId, ...data } = vehicleSchema.parse(req.body);
+    const existing = await prisma.vehicle.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) return reply.code(404).send({ error: "Fahrzeug nicht gefunden" });
     const vehicle = await prisma.vehicle.update({ where: { id }, data });
     await audit(req.user!.id, "UPDATE", "Vehicle", id, { plate: vehicle.licensePlate, mileage: vehicle.mileage });
     return vehicle;
   });
 
-  app.delete("/vehicles/:id", async (req) => {
+  // Bewusst für ADMIN + STAFF (siehe AGENTS.md / customers.routes.ts).
+  app.delete("/vehicles/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const existing = await prisma.vehicle.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) return reply.code(404).send({ error: "Fahrzeug nicht gefunden" });
     const vehicle = await prisma.vehicle.update({ where: { id }, data: { archived: true } });
     await audit(req.user!.id, "ARCHIVE", "Vehicle", id);
     return vehicle;
