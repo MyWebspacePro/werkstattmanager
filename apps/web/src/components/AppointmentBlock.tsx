@@ -32,6 +32,13 @@ export function AppointmentBlock({ a, top, height, compact, showResource, dragga
   const showPerson = height >= (compact ? 48 : 74);
   const laneLabel = showResource ? (a.resource?.name ? `🛠 ${a.resource.name}` : null) : a.mechanic ? `👤 ${a.mechanic.name}` : null;
   const showLane = height >= (compact ? 48 : 74) && laneLabel;
+  // Kompakt: Bühne/Person als Kürzel direkt hinter das Kennzeichen — passt in
+  // jeden Block, auch 30-Minuten-Slots im Wochen-Gantt.
+  const compactLane = compact
+    ? showResource
+      ? a.resource?.name?.replace(/^Hebebühne\s*/, "Hb ").replace(/^Reifenwechselplatz/, "RWZ")
+      : a.mechanic?.name.split(" ")[0]
+    : null;
 
   return (
     <div
@@ -61,7 +68,10 @@ export function AppointmentBlock({ a, top, height, compact, showResource, dragga
           {compact ? start : `${start}–${end}`}
         </div>
       )}
-      <div className="truncate font-semibold">{plate}</div>
+      <div className="truncate font-semibold">
+        {plate}
+        {compactLane ? <span className="font-normal opacity-70"> · {compactLane}</span> : null}
+      </div>
       {!compact && <div className="truncate opacity-70">{custName(a)}</div>}
       {showReason && <div className="truncate opacity-60">{a.reason}</div>}
       {showLane && <div className="truncate opacity-70">{laneLabel}</div>}
