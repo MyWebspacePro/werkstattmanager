@@ -1,7 +1,9 @@
 import Fastify from "fastify";
 import type { FastifyError } from "fastify";
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import { ZodError } from "zod";
+import { env } from "./env.js";
 import { authRoutes } from "./modules/auth.routes.js";
 import { settingsRoutes } from "./modules/settings.routes.js";
 import { customerRoutes } from "./modules/customers.routes.js";
@@ -24,7 +26,24 @@ export async function buildApp() {
     bodyLimit: 10 * 1024 * 1024, // 10 MB (CSV-Imports, später Fotos)
   });
 
-  await app.register(cors, { origin: true, credentials: true });
+  // global: false -> greift nur, wo eine Route es per config.rateLimit einschaltet.
+  // hook: preHandler, damit der Body schon geparst ist und der Key auf die
+  // E-Mail gelegt werden kann (nicht auf die IP, die sich fälschen liesse).
+  await app.register(rateLimit, { global: false, hook: "preHandler" });
+
+  const corsOrigins = env.CORS_ORIGINS.split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  await app.register(cors, {
+    origin: (origin, cb) => {
+      // Kein Origin = curl / Server-zu-Server -> erlauben.
+      // Sonst nur die konfigurierte Allowlist; "Origin: null" und Fremd-Domains fallen raus.
+      if (!origin) return cb(null, true);
+      return cb(null, corsOrigins.includes(origin));
+    },
+    credentials: true,
+  });
 
   app.get("/api/health", async () => ({ ok: true, ts: new Date().toISOString() }));
 

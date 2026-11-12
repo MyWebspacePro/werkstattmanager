@@ -16,7 +16,20 @@ const loginSchema = z.object({
 });
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/login", async (req, reply) => {
+  // Brute-Force-Bremse: 5 Fehlversuche pro Minute und E-Mail, dann 429.
+  // Ohne das war jedes Konto per Passwortliste angreifbar.
+  // Key = E-Mail statt IP: die ist nicht fälschbar (X-Forwarded-For-Spoofing
+  // würde sonst das Limit aushebeln). Kein Treffer -> IP als Fallback.
+  const loginRateLimit = {
+    max: 5,
+    timeWindow: "1 minute",
+    keyGenerator: (req: { body?: unknown; ip: string }) => {
+      const email = (req.body as { email?: string } | undefined)?.email;
+      return (email ?? req.ip).toLowerCase();
+    },
+  };
+
+  app.post("/login", { config: { rateLimit: loginRateLimit } }, async (req, reply) => {
     const body = loginSchema.parse(req.body);
     const user = await prisma.user.findUnique({ where: { email: body.email.toLowerCase() } });
     if (!user || !user.active || !(await bcrypt.compare(body.password, user.passwordHash))) {
