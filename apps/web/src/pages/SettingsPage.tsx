@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
 import { Button, Card, ErrorMsg, Field, Input, Select, Textarea } from "../components/ui.js";
+import { WorkTypeAdmin, type WorkType } from "../components/WorkTypeAdmin.js";
 import { useAuth } from "../lib/auth.js";
 
 interface AppUser {
@@ -163,6 +164,7 @@ interface Settings {
   reminderLevel1Days: number; reminderLevel2Days: number; reminderLevel3Days: number;
   reminderFee1: string; reminderFee2: string; reminderFee3: string;
   invoiceFooter: string;
+  shopStartMin: number; shopEndMin: number; saturdayOpen: boolean;
 }
 
 export default function SettingsPage() {
@@ -223,6 +225,24 @@ export default function SettingsPage() {
           </div>
         </Card>
 
+        <Card title="Werkstattzeiten (für die Auto-Verplanung)">
+          <div className="grid grid-cols-3 gap-4">
+            <Field label="Öffnung ab">
+              <Input type="time" value={minutesToTime(form.shopStartMin)} onChange={(e) => setForm({ ...form, shopStartMin: timeToMinutes(e.target.value) })} disabled={readOnly} />
+            </Field>
+            <Field label="Öffnung bis">
+              <Input type="time" value={minutesToTime(form.shopEndMin)} onChange={(e) => setForm({ ...form, shopEndMin: timeToMinutes(e.target.value) })} disabled={readOnly} />
+            </Field>
+            <Field label="Samstag offen">
+              <Select value={form.saturdayOpen ? "1" : "0"} onChange={(e) => setForm({ ...form, saturdayOpen: e.target.value === "1" })} disabled={readOnly}>
+                <option value="0">Samstag zu</option>
+                <option value="1">Samstag offen (gleiche Zeiten)</option>
+              </Select>
+            </Field>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Grundlage der Slot-Suche im Planer. Kapazität pro Mitarbeiter: «Arbeitsplätze verwalten» im Planer.</p>
+        </Card>
+
         <Card title="Zahlungsverkehr (QR-Rechnung)">
           <div className="grid grid-cols-2 gap-4">
             <Field label="QR-IBAN (empfohlen)"><Input value={form.qrIban} onChange={set("qrIban")} placeholder="CHxx 3xxx xxxx xxxx xxxx x" disabled={readOnly} /></Field>
@@ -267,6 +287,37 @@ export default function SettingsPage() {
 
       <PasswordCard />
       {user?.role === "ADMIN" && <UsersCard />}
+      {user?.role === "ADMIN" && <WorkTypesCard />}
     </div>
+  );
+}
+
+const minutesToTime = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const timeToMinutes = (t: string) => {
+  const [h, m] = t.split(":").map(Number);
+  return (Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : 420);
+};
+
+function WorkTypesCard() {
+  const { data } = useQuery({ queryKey: ["worktypes"], queryFn: () => api<WorkType[]>("/worktypes") });
+  const [adminOpen, setAdminOpen] = useState(false);
+  const qc = useQueryClient();
+  const count = (data ?? []).filter((wt) => wt.active).length;
+  return (
+    <Card
+      title="Arbeitsarten (Auto-Verplanung)"
+      actions={<Button variant="secondary" onClick={() => setAdminOpen(true)}>Verwalten ({count})</Button>}
+    >
+      <p className="text-sm text-slate-600">
+        Standarddauer und Qualifikation pro Arbeit. Die Annahme wählt im Planer die passenden Arten aus — Dauer,
+        Mechaniker und freier Slot werden automatisch vorgeschlagen.
+      </p>
+      <WorkTypeAdmin
+        open={adminOpen}
+        workTypes={data ?? []}
+        onClose={() => setAdminOpen(false)}
+        onChanged={() => qc.invalidateQueries({ queryKey: ["worktypes"] })}
+      />
+    </Card>
   );
 }

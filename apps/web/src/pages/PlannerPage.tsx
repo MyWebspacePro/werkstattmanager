@@ -4,6 +4,8 @@ import { api } from "../lib/api.js";
 import { Button, Card, ErrorMsg } from "../components/ui.js";
 import { TimeGrid } from "../components/TimeGrid.js";
 import { WeekGrid } from "../components/WeekGrid.js";
+import { CapacityView } from "../components/CapacityView.js";
+import type { WorkType } from "../components/WorkTypeAdmin.js";
 import { AppointmentModal, customerLabel, type AppointmentDraft } from "../components/AppointmentModal.js";
 import { ResourceAdmin } from "../components/ResourceAdmin.js";
 import { confirmOverride } from "../lib/override.js";
@@ -19,9 +21,9 @@ import {
   type PlannerAppointment,
   type ResourceLite,
 } from "../lib/planner.js";
-import { SHOP_END_MIN, addDays, atMinutes, dayRange, isSameDay, startOfDay, startOfWeek, weekdayShort } from "../lib/slots.js";
+import { SHOP_END_MIN, SHOP_START_MIN, addDays, atMinutes, dayRange, isSameDay, startOfDay, startOfWeek } from "../lib/slots.js";
 
-type View = "day" | "week";
+type View = "day" | "week" | "capacity";
 type GroupBy = "station" | "mechanic";
 
 export default function PlannerPage() {
@@ -51,6 +53,13 @@ export default function PlannerPage() {
     queryKey: ["vehicles-all"],
     queryFn: () => api<{ items: Array<{ id: string; licensePlate: string; brand: string; model: string; customerId: string; customer?: { firstName?: string | null; lastName?: string | null; company?: string | null } | null }> }>("/vehicles?take=100"),
   });
+  const { data: settings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => api<{ shopStartMin: number; shopEndMin: number; saturdayOpen: boolean }>("/settings"),
+  });
+  const shopStartMin = settings?.shopStartMin ?? SHOP_START_MIN;
+  const shopEndMin = settings?.shopEndMin ?? SHOP_END_MIN;
+  const { data: workTypes } = useQuery({ queryKey: ["worktypes"], queryFn: () => api<WorkType[]>("/worktypes") });
   const { data: appts, error } = useQuery({
     queryKey: ["appointments", rangeStart.toISOString(), rangeEnd.toISOString()],
     queryFn: () => api<PlannerAppointment[]>(`/appointments?from=${encodeURIComponent(rangeStart.toISOString())}&to=${encodeURIComponent(rangeEnd.toISOString())}`),
@@ -58,6 +67,15 @@ export default function PlannerPage() {
 
   const allResources = resourceRows ?? [];
   const activeResources = allResources.filter((r) => r.active !== false);
+
+  const mechanics = useMemo(() => activeResources.filter((r) => r.type === "MECHANIC"), [activeResources]);
+  const requested = useMemo(() => (appts ?? []).filter((a) => a.status === "REQUESTED"), [appts]);
+  const requestedCount = requested.length;
+
+  const confirmMutation = useMutation({
+    mutationFn: (id: string) => api(`/appointments/${id}`, { method: "PUT", body: JSON.stringify({ status: "CONFIRMED" }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["appointments"] }),
+  });
 
   const visible = useMemo(
     () => (appts ?? []).filter((a) => !hiddenStatus.has(a.status)),
@@ -97,12 +115,14 @@ export default function PlannerPage() {
     moveMutation.mutate({ id, body });
   };
 
-  const openNew = (opts: { day?: Date; startMin?: number; laneKey?: string } = {}) => {
+  const openNew = (opts: { day?: Date; startMin?: number; laneKey?: string; laneIsMechanic?: boolean } = {}) => {
     const day = startOfDay(opts.day ?? (view === "day" ? anchor : new Date()));
     const startMin = opts.startMin ?? 8 * 60;
     const start = atMinutes(day, startMin);
     const end = atMinutes(day, Math.min(startMin + 60, SHOP_END_MIN));
-    const laneIsStation = groupBy === "station";
+    // Die Kapazitätsansicht klickt immer eine Mechaniker-Lücke an — unabhängig
+    // davon, wie die Spalten im Raster gerade gruppiert sind.
+    const laneIsStation = opts.laneIsMechanic === true ? false : groupBy === "station";
     setDraft({
       customerId: "",
       vehicleId: vehicleRows?.items[0]?.id ?? "",
@@ -151,13 +171,19 @@ export default function PlannerPage() {
         <h1 className="text-2xl font-bold">Werkstattplaner</h1>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex overflow-hidden rounded-lg border border-slate-300">
-            {(["day", "week"] as View[]).map((v) => (
+            {(
+              [
+                ["day", "Tag"],
+                ["week", "Woche"],
+                ["capacity", "Kapazität"],
+              ] as Array<[View, string]>
+            ).map(([v, label]) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
                 className={`px-3 py-1.5 text-sm font-medium ${view === v ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"}`}
               >
-                {v === "day" ? "Tag" : "Woche"}
+                {label}
               </button>
             ))}
           </div>
@@ -182,6 +208,11 @@ export default function PlannerPage() {
               <input type="checkbox" checked={sixDays} onChange={(e) => setSixDays(e.target.checked)} />
               Samstag
             </label>
+          )}
+          {isAdmin && requestedCount > 0 && (
+            <Button variant="secondary" onClick={() => requested.forEach((a) => confirmMutation.mutate(a.id))} disabled={confirmMutation.isPending}>
+              ✓ Beantragte bestätigen ({requestedCount})
+            </Button>
           )}
           <Button onClick={() => openNew()}>+ Termin</Button>
           <Button variant="secondary" onClick={() => setAdminOpen(true)}>
@@ -233,12 +264,23 @@ export default function PlannerPage() {
 
       {(error || resError) && <ErrorMsg error={error ?? resError} />}
 
-      {view === "day" ? (
+      {view === "capacity" ? (
+        <CapacityView
+          days={days}
+          mechanics={mechanics}
+          appointments={visible}
+          shopStartMin={shopStartMin}
+          shopEndMin={shopEndMin}
+          onGapClick={(mechanicId, day, startMin) => openNew({ day, startMin, laneKey: mechanicId, laneIsMechanic: true })}
+        />
+      ) : view === "day" ? (
         <TimeGrid
           day={days[0]}
           lanes={lanes}
           appointments={visible}
           groupBy={groupBy}
+          shopStartMin={shopStartMin}
+          shopEndMin={shopEndMin}
           onCreate={(laneKey, startMin, endMin) => openNew({ day: days[0], startMin, laneKey })}
           onOpen={openEdit}
           onMove={moveAppointment}
@@ -249,6 +291,8 @@ export default function PlannerPage() {
           lanes={lanes}
           appointments={visible}
           groupBy={groupBy}
+          shopStartMin={shopStartMin}
+          shopEndMin={shopEndMin}
           today={new Date()}
           onCreate={(laneKey, day, startMin) => openNew({ day, startMin, laneKey })}
           onOpen={openEdit}
@@ -267,6 +311,7 @@ export default function PlannerPage() {
         initial={draft}
         resources={allResources}
         vehicles={vehicleRows?.items ?? []}
+        workTypes={workTypes ?? []}
         isAdmin={isAdmin}
         onClose={() => setModalOpen(false)}
         onSaved={() => qc.invalidateQueries({ queryKey: ["appointments"] })}

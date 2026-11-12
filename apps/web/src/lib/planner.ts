@@ -16,6 +16,7 @@ export interface ResourceLite {
   jobTitle?: string | null;
   skillLevel?: number;
   sortOrder?: number;
+  workMinutesPerDay?: number;
 }
 
 export interface PlannerAppointment {
@@ -129,9 +130,9 @@ export function appointmentsOfDay(appointments: PlannerAppointment[], day: Date)
  * Start/Ende eines Termins als Minuten seit Mitternacht, auf die Werkstattzeit
  * begrenzt. Ein Termin, der über Mitternacht läuft, endet am Achsenende.
  */
-export function blockMinutes(a: { start: string; end: string }): { startMin: number; endMin: number } {
-  const startMin = Math.max(minutesOfDay(new Date(a.start)), SHOP_START_MIN);
+export function blockMinutes(a: { start: string; end: string }, shopStartMin = SHOP_START_MIN, shopEndMin = SHOP_END_MIN): { startMin: number; endMin: number } {
+  const startMin = Math.max(minutesOfDay(new Date(a.start)), shopStartMin);
   let endMin = minutesOfDay(new Date(a.end));
-  if (endMin <= startMin) endMin = SHOP_END_MIN;
-  return { startMin, endMin: Math.min(endMin, SHOP_END_MIN) };
+  if (endMin <= startMin) endMin = shopEndMin;
+  return { startMin, endMin: Math.min(endMin, shopEndMin) };
 }

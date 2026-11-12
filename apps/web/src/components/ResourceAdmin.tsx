@@ -71,15 +71,16 @@ export function ResourceAdmin({ open, resources, onClose, onChanged }: Props) {
                 <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-2 py-1.5 font-medium">Name</th>
+                    <th className="w-28 px-2 py-1.5 font-medium">Kapazität</th>
                     <th className="w-16 px-2 py-1.5 font-medium">Reihe</th>
                     <th className="w-20 px-2 py-1.5 font-medium">Status</th>
-                    <th className="w-16 px-2 py-1.5" />
+                    <th className="w-24 px-2 py-1.5" />
                   </tr>
                 </thead>
                 <tbody>
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-2 py-2 text-xs text-slate-500">
+                      <td colSpan={5} className="px-2 py-2 text-xs text-slate-500">
                         Keine Einträge.
                       </td>
                     </tr>
@@ -97,6 +98,29 @@ export function ResourceAdmin({ open, resources, onClose, onChanged }: Props) {
                           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-sm hover:border-slate-200 focus:border-slate-300 focus:bg-white focus:outline-none"
                         />
                         {r.jobTitle && <div className="px-1 text-[11px] text-slate-500">{r.jobTitle}</div>}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {r.type === "MECHANIC" ? (
+                          <>
+                            <input
+                              type="number"
+                              min={0}
+                              max={1440}
+                              step={30}
+                              defaultValue={r.workMinutesPerDay ?? 510}
+                              disabled={update.isPending}
+                              onBlur={(e) => {
+                                const v = Number(e.target.value);
+                                if (Number.isFinite(v) && v >= 0 && v !== (r.workMinutesPerDay ?? 510)) update.mutate({ id: r.id, body: { workMinutesPerDay: v } });
+                              }}
+                              title="Tageskapazität in Minuten"
+                              className="w-14 rounded border border-slate-200 px-1 py-0.5 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            />
+                            <span className="ml-1 text-[11px] text-slate-500">min/Tag</span>
+                          </>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="px-2 py-1.5">
                         <input

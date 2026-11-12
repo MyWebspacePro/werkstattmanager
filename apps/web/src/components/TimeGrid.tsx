@@ -15,21 +15,22 @@ interface Props {
   onOpen: (a: PlannerAppointment) => void;
   /** Termin in andere Spur/Zeit ziehen. */
   onMove?: (id: string, target: MoveTarget) => void;
+  /** Öffnungszeiten aus den Einstellungen (Fallback: 07:00–18:00). */
+  shopStartMin?: number;
+  shopEndMin?: number;
 }
 
-const TOTAL_MIN = SHOP_END_MIN - SHOP_START_MIN;
-const HOURS = Array.from({ length: Math.floor(TOTAL_MIN / 60) + 1 }, (_, i) => SHOP_START_MIN + i * 60);
-
 /** Tag-Ansicht: Spalten = Arbeitsplätze bzw. Mitarbeiter, Zeilen = Zeit. */
-export function TimeGrid({ day, lanes, appointments, pxPerMin = 1.15, groupBy, onCreate, onOpen, onMove }: Props) {
+export function TimeGrid({ day, lanes, appointments, pxPerMin = 1.15, groupBy, onCreate, onOpen, onMove, shopStartMin = SHOP_START_MIN, shopEndMin = SHOP_END_MIN }: Props) {
   const drag = useGridDrag(pxPerMin);
+  const TOTAL_MIN = shopEndMin - shopStartMin;
+  const HOURS = Array.from({ length: Math.floor(TOTAL_MIN / 60) + 1 }, (_, i) => shopStartMin + i * 60);
+  const bodyHeight = TOTAL_MIN * pxPerMin;
 
   const minutesFromEvent = (e: MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    return snapMinutes(SHOP_START_MIN + (e.clientY - rect.top) / pxPerMin);
+    return snapMinutes(shopStartMin + (e.clientY - rect.top) / pxPerMin);
   };
-
-  const bodyHeight = TOTAL_MIN * pxPerMin;
 
   return (
     <div className="overflow-auto rounded-xl border border-slate-200 bg-white" style={{ maxHeight: "calc(100vh - 250px)" }}>
@@ -51,7 +52,7 @@ export function TimeGrid({ day, lanes, appointments, pxPerMin = 1.15, groupBy, o
           {/* Zeitachse */}
           <div className="relative w-14 shrink-0" style={{ height: bodyHeight }}>
             {HOURS.map((m) => (
-              <div key={m} className="absolute right-1 -translate-y-1/2 text-[11px] tabular-nums text-slate-400" style={{ top: (m - SHOP_START_MIN) * pxPerMin }}>
+              <div key={m} className="absolute right-1 -translate-y-1/2 text-[11px] tabular-nums text-slate-400" style={{ top: (m - shopStartMin) * pxPerMin }}>
                 {String(Math.floor(m / 60)).padStart(2, "0")}:00
               </div>
             ))}
@@ -68,7 +69,7 @@ export function TimeGrid({ day, lanes, appointments, pxPerMin = 1.15, groupBy, o
                 onClick={(e) => {
                   if (e.target !== e.currentTarget) return;
                   const start = minutesFromEvent(e);
-                  onCreate(lane.key, start, Math.min(start + 60, SHOP_END_MIN));
+                  onCreate(lane.key, start, Math.min(start + 60, shopEndMin));
                 }}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
@@ -77,7 +78,7 @@ export function TimeGrid({ day, lanes, appointments, pxPerMin = 1.15, groupBy, o
                 }}
               >
                 {HOURS.map((m) => (
-                  <div key={m} className="pointer-events-none absolute inset-x-0 border-t border-slate-100" style={{ top: (m - SHOP_START_MIN) * pxPerMin }} />
+                  <div key={m} className="pointer-events-none absolute inset-x-0 border-t border-slate-100" style={{ top: (m - shopStartMin) * pxPerMin }} />
                 ))}
 
                 {items.map((a) => {
@@ -87,7 +88,7 @@ export function TimeGrid({ day, lanes, appointments, pxPerMin = 1.15, groupBy, o
                     <AppointmentBlock
                       key={a.id}
                       a={a}
-                      top={(startMin - SHOP_START_MIN) * pxPerMin}
+                      top={(startMin - shopStartMin) * pxPerMin}
                       height={duration * pxPerMin - 2}
                       draggable={!!onMove}
                       onOpen={onOpen}

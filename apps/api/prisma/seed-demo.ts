@@ -89,6 +89,50 @@ async function main() {
   const resByNameResourceType = Object.fromEntries(resRaw.map((r) => [r.name, r.type]));
   console.log(`✓ Ressourcen: ${Object.keys(res).length} aktiv (4 Bühnen + Werkstatt-Team)`);
 
+  // ── Arbeitsarten-Katalog: Standarddauer + Skill für die Auto-Verplanung ─────
+  const workTypes = [
+    { name: "Winterreifen montieren", defaultMinutes: 30, requiredSkill: 1, laborRate: 95 },
+    { name: "Winterreifen montieren (Hotel-Satz)", defaultMinutes: 30, requiredSkill: 1, laborRate: 95 },
+    { name: "Sommer→Winter + Einlagerung Hotel", defaultMinutes: 30, requiredSkill: 1, laborRate: 95 },
+    { name: "Winterreifen Flotte", defaultMinutes: 30, requiredSkill: 1, laborRate: 95 },
+    { name: "Service mit Ölwechsel", defaultMinutes: 60, requiredSkill: 1, laborRate: 140 },
+    { name: "Service klein", defaultMinutes: 60, requiredSkill: 1, laborRate: 135 },
+    { name: "MFK-Vorbereitung", defaultMinutes: 60, requiredSkill: 1, laborRate: 135 },
+    { name: "Winterreifen-Check", defaultMinutes: 45, requiredSkill: 1, laborRate: 65 },
+    { name: "Reifendruck Ruhedruck prüfen", defaultMinutes: 15, requiredSkill: 1, laborRate: 65 },
+    { name: "Bremsen vorne + hinten", defaultMinutes: 90, requiredSkill: 2, laborRate: 145 },
+    { name: "Bremsen hinten + Achsvermessung", defaultMinutes: 120, requiredSkill: 2, laborRate: 145 },
+    { name: "Achsvermessung", defaultMinutes: 45, requiredSkill: 2, laborRate: 145 },
+    { name: "Elektrik: Fensterheber", defaultMinutes: 60, requiredSkill: 2, laborRate: 150 },
+    { name: "Klimaanlage nachfüllen", defaultMinutes: 60, requiredSkill: 2, laborRate: 150 },
+    { name: "Stossdämpfer hinten", defaultMinutes: 150, requiredSkill: 2, laborRate: 145 },
+    { name: "Zahnriemen + Wasserpumpe", defaultMinutes: 240, requiredSkill: 2, laborRate: 145 },
+    { name: "Diagnose Motorleuchte", defaultMinutes: 60, requiredSkill: 3, laborRate: 155 },
+    { name: "Fehlersuche CAN-Bus", defaultMinutes: 90, requiredSkill: 3, laborRate: 155 },
+    { name: "Fehlersuche Startprobleme", defaultMinutes: 45, requiredSkill: 3, laborRate: 155 },
+    { name: "TPMS einlernen", defaultMinutes: 45, requiredSkill: 3, laborRate: 150 },
+  ];
+  for (const [i, wt] of workTypes.entries()) {
+    const existing = await prisma.workType.findUnique({ where: { name: wt.name } });
+    if (existing) await prisma.workType.update({ where: { id: existing.id }, data: { ...wt, active: true, sortOrder: (i + 1) * 10 } });
+    else await prisma.workType.create({ data: { ...wt, sortOrder: (i + 1) * 10 } });
+  }
+  console.log(`✓ Arbeitsarten: ${workTypes.length} im Katalog`);
+
+  // Tageskapazität pro Person: Lernende/Assistent kürzer als Profis.
+  const capacityByName: Record<string, number> = {
+    "Jason Pagnin": 510, "Cedric Holenstein": 510, "Marco Eichmann": 510,
+    "Gianni Verrilli": 510, "Marcel Steinemann": 510, "Besim Sherifi": 510,
+    "Elijah Jäger": 390, "Roger Willi": 390, "Elvedin Memedoski": 390,
+    "Florin Duttlinger": 390, "Stefano Schober": 390,
+  };
+  for (const [name, minutes] of Object.entries(capacityByName)) {
+    await prisma.resource.updateMany({ where: { name }, data: { workMinutesPerDay: minutes } });
+  }
+
+  // Werkstattzeiten für die Slot-Suche
+  await prisma.setting.update({ where: { id: 1 }, data: { shopStartMin: 7 * 60 + 30, shopEndMin: 17 * 60 + 30, saturdayOpen: true } });
+
   // ── 20 Kunden mit Fahrzeugen (Region Schaffhausen) ─────────────────────────
   const kunden: Array<{
     type: "PRIVATE" | "COMPANY" | "FLEET"; firstName?: string; lastName?: string; company?: string;

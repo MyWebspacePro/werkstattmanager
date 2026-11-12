@@ -35,7 +35,8 @@ const statusColor: Record<string, "blue" | "yellow" | "purple" | "green" | "slat
 const emptyOrder = { customerId: "", vehicleId: "", resourceId: "", requiredSkill: 1, appointmentId: "", reportedIssues: "", internalNotes: "" };
 
 interface OpenAppointment {
-  id: string; start: string; reason?: string | null; requiredSkill: number;
+  id: string; start: string; end: string; reason?: string | null; requiredSkill: number;
+  mechanic?: { id: string; name: string } | null;
   customer?: { firstName?: string | null; lastName?: string | null; company?: string | null } | null;
   vehicle?: { licensePlate: string; brand: string; model: string } | null;
 }
@@ -244,6 +245,10 @@ export default function WorkOrdersPage() {
                 reportedIssues: a.reason ?? f.reportedIssues,
                 requiredSkill: Math.max(1, a.requiredSkill || 1),
               }));
+              // Auto-Verplanung übernehmen: vorgesehener Mechaniker + geplante
+              // Dauer (aus dem Termin) als Zuweisungs-Vorschlag vorbelegen.
+              const minutes = Math.round((new Date(a.end).getTime() - new Date(a.start).getTime()) / 60_000);
+              if (a.mechanic?.id) setAssignForm((f) => ({ ...f, resourceId: a.mechanic!.id, plannedMinutes: Math.max(15, minutes), note: "aus Termin übernommen" }));
               // Kunde/Fahrzeug aus dem Termin-Objekt bestimmen (via Fahrzeugliste matchen)
               if (a.vehicle) {
                 const match = (customers?.items ?? []).find((c) => c.vehicles.some((v) => v.licensePlate === a.vehicle!.licensePlate));

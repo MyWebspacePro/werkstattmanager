@@ -91,6 +91,10 @@ model Setting {
   reminderFee2      Decimal  @default(20) @db.Decimal(10, 2)
   reminderFee3      Decimal  @default(30) @db.Decimal(10, 2)
   invoiceFooter     String   @default("Erfreulich, dass wir Sie mit Ihrem Fahrzeug betreuen durften.")
+  // Werkstattzeiten für die Slot-Suche (Minuten seit Mitternacht)
+  shopStartMin      Int      @default(420) // 07:00
+  shopEndMin        Int      @default(1080) // 18:00
+  saturdayOpen      Boolean  @default(false)
   updatedAt         DateTime @updatedAt
 }
 
@@ -204,11 +208,26 @@ model Resource {
   jobTitle   String?      // z.B. Automobildiagnostiker — nur für MECHANIC-Ressourcen
   skillLevel Int          @default(1) // 0=Bühne/Ressource · 1=Automobilfachmann · 2=Automechatroniker · 3=Diagnostiker
   sortOrder  Int          @default(0) // Reihenfolge der Spuren im Planer (aufsteigend)
+  workMinutesPerDay Int   @default(510) // Tageskapazität in Minuten (nur MECHANIC relevant; 510 = 8,5 h)
 
   appointments         Appointment[]      @relation("AppointmentResource")
   mechanicAppointments Appointment[]      @relation("AppointmentMechanic")
   workOrders           WorkOrder[]
   assignments          OrderAssignment[]
+}
+
+// Arbeitsarten-Katalog: Standarddauer + Qualifikation für die Auto-Verplanung.
+// Die Annahme wählt 1–n Arten, das System rechnet Dauer und Skill zusammen.
+model WorkType {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  defaultMinutes Int      // geplante Dauer in Minuten
+  requiredSkill  Int      @default(1) // 1=Fachmann · 2=Automechatroniker · 3=Diagnostiker
+  laborRate      Decimal  @default(140) @db.Decimal(10, 2) // Stundensatz-Vorschlag für die Positionszeile
+  active         Boolean  @default(true)
+  sortOrder      Int      @default(0)
+
+  @@index([active])
 }
 
 // Geplante Personen-Zuweisung pro Auftrag (z.B. Diagnostiker 20 min, danach Mechaniker)

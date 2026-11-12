@@ -32,11 +32,15 @@ const settingsSchema = z.object({
   reminderFee2: z.coerce.number().min(0).default(20),
   reminderFee3: z.coerce.number().min(0).default(30),
   invoiceFooter: z.string().default(""),
+  shopStartMin: z.coerce.number().int().min(0).max(1440).default(420),
+  shopEndMin: z.coerce.number().int().min(0).max(1440).default(1080),
+  saturdayOpen: z.boolean().default(false),
 });
 
 async function getSettings() {
   return (await prisma.setting.findUnique({ where: { id: 1 } })) ?? prisma.setting.create({ data: { id: 1, companyName: "Neue Werkstatt" } });
 }
+export { getSettings };
 
 export async function settingsRoutes(app: FastifyInstance): Promise<void> {
   app.get("/settings", { preHandler: authGuard }, async () => getSettings());

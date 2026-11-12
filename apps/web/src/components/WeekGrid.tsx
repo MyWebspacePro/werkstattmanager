@@ -15,20 +15,23 @@ interface Props {
   onCreate: (laneKey: string, day: Date, startMin: number, endMin: number) => void;
   onOpen: (a: PlannerAppointment) => void;
   onMove?: (id: string, target: MoveTarget) => void;
+  /** Öffnungszeiten aus den Einstellungen (Fallback: 07:00–18:00). */
+  shopStartMin?: number;
+  shopEndMin?: number;
 }
 
-const TOTAL_MIN = SHOP_END_MIN - SHOP_START_MIN;
-const HOURS = Array.from({ length: Math.floor(TOTAL_MIN / 60) + 1 }, (_, i) => SHOP_START_MIN + i * 60);
 const LABEL_W = 150;
 
 /** Wochen-Gantt: Zeilen = Arbeitsplätze bzw. Mitarbeiter, Spalten = Tage. */
-export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.6, groupBy, today, onCreate, onOpen, onMove }: Props) {
+export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.6, groupBy, today, onCreate, onOpen, onMove, shopStartMin = SHOP_START_MIN, shopEndMin = SHOP_END_MIN }: Props) {
   const drag = useGridDrag(pxPerMin);
+  const TOTAL_MIN = shopEndMin - shopStartMin;
   const bodyHeight = TOTAL_MIN * pxPerMin;
+  const HOURS = Array.from({ length: Math.floor(TOTAL_MIN / 60) + 1 }, (_, i) => shopStartMin + i * 60);
 
   const minutesFromEvent = (e: MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    return snapMinutes(SHOP_START_MIN + (e.clientY - rect.top) / pxPerMin);
+    return snapMinutes(shopStartMin + (e.clientY - rect.top) / pxPerMin);
   };
 
   const isToday = (d: Date) =>
@@ -57,7 +60,7 @@ export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.6, groupBy, t
               <div className={`text-xs font-semibold leading-tight ${lane.kind === "UNASSIGNED" ? "text-amber-700" : "text-slate-800"}`}>{lane.title}</div>
               {lane.subtitle && <div className="text-[10px] leading-tight text-slate-500">{lane.subtitle}</div>}
               {HOURS.filter((m) => m % 120 === 0).map((m) => (
-                <div key={m} className="absolute right-1 text-[10px] tabular-nums text-slate-400" style={{ top: (m - SHOP_START_MIN) * pxPerMin + 26 }}>
+                <div key={m} className="absolute right-1 text-[10px] tabular-nums text-slate-400" style={{ top: (m - shopStartMin) * pxPerMin + 26 }}>
                   {String(Math.floor(m / 60)).padStart(2, "0")}:00
                 </div>
               ))}
@@ -73,7 +76,7 @@ export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.6, groupBy, t
                   onClick={(e) => {
                     if (e.target !== e.currentTarget) return;
                     const start = minutesFromEvent(e);
-                    onCreate(lane.key, day, start, Math.min(start + 60, SHOP_END_MIN));
+                    onCreate(lane.key, day, start, Math.min(start + 60, shopEndMin));
                   }}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => {
@@ -85,7 +88,7 @@ export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.6, groupBy, t
                     <div
                       key={m}
                       className={`pointer-events-none absolute inset-x-0 ${m % 60 === 0 ? "border-t border-slate-100" : "border-t border-dashed border-slate-50"}`}
-                      style={{ top: (m - SHOP_START_MIN) * pxPerMin }}
+                      style={{ top: (m - shopStartMin) * pxPerMin }}
                     />
                   ))}
 
@@ -96,7 +99,7 @@ export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.6, groupBy, t
                       <AppointmentBlock
                         key={a.id}
                         a={a}
-                        top={(startMin - SHOP_START_MIN) * pxPerMin}
+                        top={(startMin - shopStartMin) * pxPerMin}
                         height={duration * pxPerMin - 1.5}
                         compact
                         draggable={!!onMove}

@@ -51,6 +51,32 @@ Bei Schema-Änderungen zusätzlich **vor** dem Start:
    `createdAt` wieder löschen. `prisma/backfill-plan.ts` (Bühne + Mechaniker
    nachziehen) ist dagegen jederzeit gefahrlos lauffähig.
 
+## Auto-Verplanung (seit 13.11.2026)
+
+- **Arbeitsarten-Katalog** (`WorkType`, verwaltet in Einstellungen → «Arbeitsarten»):
+  Name, Standarddauer, Qualifikation, Stundensatz. Die Annahme wählt im Planer
+  1–n Arten; Dauer = Summe, Skill = Maximum. Grundfeld wird automatisch gesetzt.
+- **Slot-Suche**: `GET /api/appointments/suggest?durationMin=&requiredSkill=&from=&to=[&stationId][&mechanicId]`
+  — liefert max. 5 Vorschläge (frühester Slot zuerst, am wenigsten belasteter
+  qualifizierter Mechaniker). Öffnungszeiten aus `Setting.shopStartMin/shopEndMin/
+  saturdayOpen`, gerechnet in **Europe/Zurich** (der Container läuft UTC — deshalb
+  `apps/api/src/lib/shopTime.ts`, mit Tests in `shopTime.test.ts`).
+- **`POST /appointments` mit `autoAssign: true`**: füllt leere Bühne/Mechaniker mit
+  der am wenigsten belasteten freien Kombination. Nicht gefundene Zuweisung = null.
+- **Bestätigungsflow**: auto-verplante Termine als `REQUESTED` anlegen; Chef
+  bestätigt im Planer («Beantragte bestätigen»). Bestehender Override-Flow
+  (409 + `canOverride`) bleibt; der 409 enthält jetzt `conflicts[]`
+  (plate/reason/start/end/lane) und der Dialog zeigt sie.
+- **Kapazität**: `Resource.workMinutesPerDay` (Profi 510, Lernende 390 im Seed),
+  Ansicht «Kapazität» im Planer zeigt gebucht/Kapazität pro Tag + klickbare Lücken.
+- **Seed-Falle (zweimal reingeritten!)**: `seed-demo.ts` legt den Werkstattplan
+  relativ zum Lauf-Tag an. Jeder Lauf an einem anderen Montag **verdoppelt**
+  Termine UND erzeugt dazu Aufträge/Rechnungen. Nach versehentlichem Lauf:
+  alles mit `createdAt >= <Laufzeitpunkt>` in FK-Reihenfolge löschen
+  (Reminder → Payment → Invoice → StockMovement → TimeEntry → OrderAssignment →
+  WorkOrder → Appointment). Rechnungs-/Auftragsnummerntreiber rücken weiter (ok).
+  `backfill-plan.ts` ist davon nicht betroffen und jederzeit gefahrlos lauffähig.
+
 ## Auth — bitte nicht beiläufig umbauen
 
 Zwei Sessions, die zusammengehören:

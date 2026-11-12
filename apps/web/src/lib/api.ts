@@ -21,11 +21,13 @@ export class ApiError extends Error {
   status: number;
   details?: string[];
   canOverride?: boolean; // Backend signalisiert: Chef darf diese Sperre übersteuern
-  constructor(status: number, message: string, details?: string[], canOverride?: boolean) {
+  body?: unknown; // roher Fehlerkörper (z.B. Konflikt-Details bei 409)
+  constructor(status: number, message: string, details?: string[], canOverride?: boolean, body?: unknown) {
     super(message);
     this.status = status;
     this.details = details;
     this.canOverride = canOverride;
+    this.body = body;
   }
 }
 
@@ -70,7 +72,7 @@ export async function api<T>(path: string, options: RequestInit = {}, retry = tr
   const isJson = res.headers.get("content-type")?.includes("application/json");
   const body = isJson ? await res.json() : await res.text();
   if (!res.ok) {
-    throw new ApiError(res.status, isJson ? body.error : "Request fehlgeschlagen", isJson ? body.details : undefined, isJson ? body.canOverride : undefined);
+    throw new ApiError(res.status, isJson ? body.error : "Request fehlgeschlagen", isJson ? body.details : undefined, isJson ? body.canOverride : undefined, body);
   }
   return body as T;
 }
