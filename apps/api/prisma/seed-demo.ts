@@ -56,23 +56,25 @@ async function main() {
   }
   console.log(`✓ Team: ${team.length} Logins (Passwort ${PW})`);
 
-  // ── Ressourcen: 4 Bühnen + alle Werkmänner (inkl. Lernende) ─────────────────
+  // ── Ressourcen: 4 Bühnen + Reifenwechselplatz + alle Werkmänner ─────────────
+  // sortOrder bestimmt die Reihenfolge der Spuren im Planer (Bühnen zuerst, dann Team).
   const resources = [
-    { name: "Hebebühne 1", type: "LIFT" as const, skillLevel: 0 },
-    { name: "Hebebühne 2", type: "LIFT" as const, skillLevel: 0 },
-    { name: "Hebebühne 3", type: "LIFT" as const, skillLevel: 0 },
-    { name: "Hebebühne 4", type: "LIFT" as const, skillLevel: 0 },
-    { name: "Jason Pagnin",      type: "MECHANIC" as const, skillLevel: 3, jobTitle: "Automobil-Diagnostiker" },
-    { name: "Cedric Holenstein", type: "MECHANIC" as const, skillLevel: 2, jobTitle: "Automobil-Mechatroniker" },
-    { name: "Marco Eichmann",    type: "MECHANIC" as const, skillLevel: 2, jobTitle: "Automobil-Mechatroniker" },
-    { name: "Gianni Verrilli",   type: "MECHANIC" as const, skillLevel: 1, jobTitle: "Automechaniker" },
-    { name: "Marcel Steinemann", type: "MECHANIC" as const, skillLevel: 1, jobTitle: "Automechaniker" },
-    { name: "Besim Sherifi",     type: "MECHANIC" as const, skillLevel: 1, jobTitle: "Reifenpraktiker" },
-    { name: "Elijah Jäger",      type: "MECHANIC" as const, skillLevel: 1, jobTitle: "Automobil-Fachmann Lernender" },
-    { name: "Roger Willi",       type: "MECHANIC" as const, skillLevel: 1, jobTitle: "Automobil-Fachmann Lernender" },
-    { name: "Elvedin Memedoski", type: "MECHANIC" as const, skillLevel: 1, jobTitle: "Automobil-Fachmann Lernender" },
-    { name: "Florin Duttlinger", type: "MECHANIC" as const, skillLevel: 1, jobTitle: "Automobil-Fachmann Lernender" },
-    { name: "Stefano Schober",   type: "MECHANIC" as const, skillLevel: 1, jobTitle: "Automobil-Assistent Lernender" },
+    { name: "Hebebühne 1", type: "LIFT" as const, skillLevel: 0, sortOrder: 10 },
+    { name: "Hebebühne 2", type: "LIFT" as const, skillLevel: 0, sortOrder: 20 },
+    { name: "Hebebühne 3", type: "LIFT" as const, skillLevel: 0, sortOrder: 30 },
+    { name: "Hebebühne 4", type: "LIFT" as const, skillLevel: 0, sortOrder: 40 },
+    { name: "Reifenwechselplatz", type: "BAY" as const, skillLevel: 0, sortOrder: 50 },
+    { name: "Jason Pagnin",      type: "MECHANIC" as const, skillLevel: 3, sortOrder: 110, jobTitle: "Automobil-Diagnostiker" },
+    { name: "Cedric Holenstein", type: "MECHANIC" as const, skillLevel: 2, sortOrder: 120, jobTitle: "Automobil-Mechatroniker" },
+    { name: "Marco Eichmann",    type: "MECHANIC" as const, skillLevel: 2, sortOrder: 130, jobTitle: "Automobil-Mechatroniker" },
+    { name: "Gianni Verrilli",   type: "MECHANIC" as const, skillLevel: 1, sortOrder: 140, jobTitle: "Automechaniker" },
+    { name: "Marcel Steinemann", type: "MECHANIC" as const, skillLevel: 1, sortOrder: 150, jobTitle: "Automechaniker" },
+    { name: "Besim Sherifi",     type: "MECHANIC" as const, skillLevel: 1, sortOrder: 160, jobTitle: "Reifenpraktiker" },
+    { name: "Elijah Jäger",      type: "MECHANIC" as const, skillLevel: 1, sortOrder: 170, jobTitle: "Automobil-Fachmann Lernender" },
+    { name: "Roger Willi",       type: "MECHANIC" as const, skillLevel: 1, sortOrder: 180, jobTitle: "Automobil-Fachmann Lernender" },
+    { name: "Elvedin Memedoski", type: "MECHANIC" as const, skillLevel: 1, sortOrder: 190, jobTitle: "Automobil-Fachmann Lernender" },
+    { name: "Florin Duttlinger", type: "MECHANIC" as const, skillLevel: 1, sortOrder: 200, jobTitle: "Automobil-Fachmann Lernender" },
+    { name: "Stefano Schober",   type: "MECHANIC" as const, skillLevel: 1, sortOrder: 210, jobTitle: "Automobil-Assistent Lernender" },
   ];
   for (const r of resources) {
     const existing = await prisma.resource.findFirst({ where: { name: r.name } });
@@ -137,6 +139,34 @@ async function main() {
       vehicles: [{ licensePlate: "SH 351208", brand: "Tesla", model: "Model 3 LR", year: 2022, mileage: 38900, fuel: "Elektrisch", inches: 18 }] },
     { type: "PRIVATE", firstName: "Brigitte", lastName: "Lehmann", email: "brigitte.lehmann@bluewin.ch", phone: "+41 52 681 42 19", street: "Im Tal 7", zip: "8233", city: "Beggingen",
       vehicles: [{ licensePlate: "SH 163527", brand: "Fiat", model: "Panda 0.9", year: 2012, mileage: 176800, fuel: "Benzin", inches: 14 }] },
+    { type: "PRIVATE", firstName: "Urs", lastName: "Baumann", email: "urs.baumann@bluewin.ch", phone: "+41 52 632 11 08", street: "Hinterdorf 12", zip: "8200", city: "Schaffhausen",
+      vehicles: [{ licensePlate: "SH 205511", brand: "Skoda", model: "Octavia 1.6 TDI", year: 2018, mileage: 142300, fuel: "Diesel", inches: 16 }] },
+    { type: "PRIVATE", firstName: "Nadine", lastName: "Kaufmann", email: "nadine.kaufmann@gmx.ch", phone: "+41 78 224 65 71", street: "Rheinstrasse 88", zip: "8212", city: "Neuhausen am Rheinfall",
+      vehicles: [{ licensePlate: "SH 277104", brand: "Mini", model: "Cooper S", year: 2020, mileage: 54300, fuel: "Benzin", inches: 17 }] },
+    { type: "PRIVATE", firstName: "Thomas", lastName: "Bänziger", email: "thomas.baenziger@bluewin.ch", phone: "+41 52 625 44 12", street: "Kirchgasse 3", zip: "8260", city: "Stein am Rhein",
+      vehicles: [{ licensePlate: "SH 190438", brand: "Ford", model: "Focus 1.0 EcoBoost", year: 2016, mileage: 128900, fuel: "Benzin", inches: 16 }] },
+    { type: "PRIVATE", firstName: "Sandra", lastName: "Rüegg", email: "sandra.ruegg@gmail.com", phone: "+41 76 441 87 22", street: "Bahnhofstrasse 21", zip: "8207", city: "Schaffhausen",
+      vehicles: [{ licensePlate: "SH 332917", brand: "Hyundai", model: "Tucson 1.6 CRDi", year: 2021, mileage: 61200, fuel: "Diesel", inches: 17 }] },
+    { type: "PRIVATE", firstName: "Reto", lastName: "Graf", email: "reto.graf@bluewin.ch", phone: "+41 79 308 15 93", street: "Wiesenstrasse 9", zip: "8215", city: "Hallau",
+      vehicles: [{ licensePlate: "SH 148820", brand: "Seat", model: "Leon 1.4 TSI", year: 2015, mileage: 167400, fuel: "Benzin", inches: 16 }] },
+    { type: "PRIVATE", firstName: "Franziska", lastName: "Wettstein", email: "franziska.wettstein@gmx.ch", phone: "+41 78 660 29 44", street: "Mühlhofstrasse 35", zip: "8200", city: "Schaffhausen",
+      vehicles: [
+        { licensePlate: "SH 361155", brand: "Audi", model: "A3 35 TFSI", year: 2022, mileage: 28700, fuel: "Benzin", inches: 18 },
+        { licensePlate: "SH 244908", brand: "Volkswagen", model: "Polo 1.2 TSI", year: 2014, mileage: 152100, fuel: "Benzin", inches: 15 },
+      ] },
+    { type: "PRIVATE", firstName: "Patrick", lastName: "Bösch", email: "patrick.boesch@bluewin.ch", phone: "+41 52 644 78 03", street: "Chrüzackerstrasse 4", zip: "8207", city: "Schaffhausen",
+      vehicles: [{ licensePlate: "SH 297362", brand: "Renault", model: "Clio 1.5 dCi", year: 2019, mileage: 88600, fuel: "Diesel", inches: 15 }] },
+    { type: "COMPANY", company: "Bock & Söhne AG", email: "flotte@bock-soehne.ch", phone: "+41 52 633 90 20", street: "Gewerbestrasse 17", zip: "8212", city: "Neuhausen am Rheinfall",
+      vehicles: [
+        { licensePlate: "SH 210774", brand: "Mercedes-Benz", model: "Sprinter 316 CDI", year: 2020, mileage: 134500, fuel: "Diesel", inches: 17 },
+        { licensePlate: "SH 210775", brand: "Mercedes-Benz", model: "Sprinter 316 CDI", year: 2020, mileage: 129800, fuel: "Diesel", inches: 17 },
+      ] },
+    { type: "PRIVATE", firstName: "Yvonne", lastName: "Schmid", email: "yvonne.schmid@gmx.ch", phone: "+41 76 815 33 07", street: "Fronstrasse 14", zip: "8200", city: "Schaffhausen",
+      vehicles: [{ licensePlate: "SH 183266", brand: "Toyota", model: "Corolla 1.8 Hybrid", year: 2018, mileage: 113700, fuel: "Benzin Hybrid", inches: 16 }] },
+    { type: "PRIVATE", firstName: "Daniel", lastName: "Vogt", email: "daniel.vogt@bluewin.ch", phone: "+41 79 552 61 38", street: "Grabenstrasse 41", zip: "8207", city: "Schaffhausen",
+      vehicles: [{ licensePlate: "SH 322408", brand: "Peugeot", model: "308 1.5 BlueHDi", year: 2021, mileage: 71300, fuel: "Diesel", inches: 16 }] },
+    { type: "PRIVATE", firstName: "Manuela", lastName: "Rhomberg", email: "manuela.rhomberg@gmail.com", phone: "+41 78 337 92 15", street: "Tägenhard 6", zip: "8200", city: "Schaffhausen",
+      vehicles: [{ licensePlate: "SH 175093", brand: "Dacia", model: "Duster 1.5 dCi", year: 2017, mileage: 158400, fuel: "Diesel", inches: 16 }] },
   ];
 
   const vehiclesByPlate = new Map<string, { id: string; customerId: string; inches?: number }>();

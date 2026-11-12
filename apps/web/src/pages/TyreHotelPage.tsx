@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
 import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, formatCHF, formatDate } from "../components/ui.js";
+import { Combobox } from "../components/Combobox.js";
+import { customerLabel } from "../components/AppointmentModal.js";
 
 interface TyreSet {
   id: string; slotCode: string; season: "SUMMER" | "WINTER" | "ALLSEASON"; inches?: number | null;
@@ -10,7 +12,7 @@ interface TyreSet {
   vehicle?: { licensePlate: string } | null;
 }
 interface ReminderRow { customerId: string; name: string; email?: string | null; marketingAllowed: boolean; slots: string[]; count: number }
-interface VehicleOption { id: string; licensePlate: string; brand: string; model: string; customerId: string }
+interface VehicleOption { id: string; licensePlate: string; brand: string; model: string; customerId: string; customer?: { firstName?: string | null; lastName?: string | null; company?: string | null } | null }
 interface CustomerOption { id: string; firstName?: string | null; lastName?: string | null; company?: string | null; vehicles: { id: string }[] }
 
 export default function TyreHotelPage() {
@@ -114,13 +116,19 @@ export default function TyreHotelPage() {
         {saveMutation.error && <ErrorMsg error={saveMutation.error} />}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Kunde / Fahrzeug">
-            <Select value={form.vehicleId} onChange={(e) => {
-              const v = vehicles?.items.find((x) => x.id === e.target.value);
-              setForm((f) => ({ ...f, vehicleId: e.target.value, customerId: v?.customerId ?? f.customerId }));
-            }}>
-              <option value="">— wählen —</option>
-              {(vehicles?.items ?? []).map((v) => <option key={v.id} value={v.id}>{v.licensePlate} — {v.brand} {v.model}</option>)}
-            </Select>
+            <Combobox
+              value={form.vehicleId}
+              onChange={(id) => {
+                const v = vehicles?.items.find((x) => x.id === id);
+                setForm((f) => ({ ...f, vehicleId: id, customerId: v?.customerId ?? f.customerId }));
+              }}
+              placeholder="Name oder Kennzeichen …"
+              options={(vehicles?.items ?? []).map((v) => ({
+                value: v.id,
+                label: `${customerLabel(v.customer)} — ${v.brand} ${v.model}`,
+                hint: v.licensePlate,
+              }))}
+            />
           </Field>
           <Field label="Lagerplatz"><Input value={form.slotCode} onChange={(e) => setForm((f) => ({ ...f, slotCode: e.target.value }))} placeholder="z.B. R1-04" /></Field>
           <Field label="Saison">

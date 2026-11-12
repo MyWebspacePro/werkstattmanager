@@ -1,235 +1,302 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
-import { Badge, Button, Card, ErrorMsg, Field, Input, Modal, Select, Textarea } from "../components/ui.js";
-import { SKILL_LABELS, SKILL_SHORT, SKILL_LEVELS } from "../lib/skills.js";
+import { Button, Card, ErrorMsg } from "../components/ui.js";
+import { TimeGrid } from "../components/TimeGrid.js";
+import { WeekGrid } from "../components/WeekGrid.js";
+import { AppointmentModal, customerLabel, type AppointmentDraft } from "../components/AppointmentModal.js";
+import { ResourceAdmin } from "../components/ResourceAdmin.js";
 import { confirmOverride } from "../lib/override.js";
 import { useAuth } from "../lib/auth.js";
+import {
+  buildLanes,
+  custName,
+  laneKeyOf,
+  STATUS_META,
+  STATUS_ORDER,
+  UNASSIGNED,
+  type MoveTarget,
+  type PlannerAppointment,
+  type ResourceLite,
+} from "../lib/planner.js";
+import { SHOP_END_MIN, addDays, atMinutes, dayRange, isSameDay, startOfDay, startOfWeek, weekdayShort } from "../lib/slots.js";
 
-interface Resource { id: string; name: string; type: "LIFT" | "MECHANIC" | "BAY"; active: boolean; jobTitle?: string | null; skillLevel: number }
-interface Vehicle { id: string; licensePlate: string; brand: string; model: string; customerId: string; customer?: { firstName?: string | null; lastName?: string | null; company?: string | null } }
-interface Appointment {
-  id: string; customerId: string; vehicleId: string; resourceId?: string | null; mechanicId?: string | null; requiredSkill?: number;
-  start: string; end: string; status: string; reason?: string | null; notes?: string | null;
-  resource?: { name: string; type: string; jobTitle?: string | null } | null;
-  mechanic?: { name: string; jobTitle?: string | null } | null;
-  customer?: { firstName?: string | null; lastName?: string | null; company?: string | null };
-  vehicle?: { licensePlate: string; brand: string; model: string };
-}
-
-const statusColor: Record<string, "blue" | "green" | "yellow" | "red" | "purple"> = {
-  REQUESTED: "yellow", CONFIRMED: "blue", IN_PROGRESS: "purple", DONE: "green", CANCELLED: "red",
-};
-
-function startOfWeek(d: Date): Date {
-  const date = new Date(d);
-  const day = (date.getDay() + 6) % 7; // Montag = 0
-  date.setDate(date.getDate() - day);
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
+type View = "day" | "week";
+type GroupBy = "station" | "mechanic";
 
 export default function PlannerPage() {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const [bypassSkill, setBypassSkill] = useState(false);
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const isAdmin = user?.role === "ADMIN";
+
+  const [view, setView] = useState<View>("week");
+  const [groupBy, setGroupBy] = useState<GroupBy>("station");
+  const [anchor, setAnchor] = useState<Date>(() => startOfDay(new Date()));
+  const [sixDays, setSixDays] = useState(false);
+  const [hiddenStatus, setHiddenStatus] = useState<Set<string>>(new Set());
   const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<Appointment | null>(null);
-  const [form, setForm] = useState({ customerId: "", vehicleId: "", resourceId: "", mechanicId: "", date: "", start: "08:00", end: "10:00", reason: "", notes: "", status: "CONFIRMED", requiredSkill: 0 });
+  const [draft, setDraft] = useState<AppointmentDraft | null>(null);
+  const [adminOpen, setAdminOpen] = useState(false);
 
-  const weekEnd = useMemo(() => { const d = new Date(weekStart); d.setDate(d.getDate() + 7); return d; }, [weekStart]);
-  const days = useMemo(() => Array.from({ length: 5 }, (_, i) => { const d = new Date(weekStart); d.setDate(d.getDate() + i); return d; }), [weekStart]);
+  const dayCount = view === "day" ? 1 : sixDays ? 6 : 5;
+  const rangeStart = useMemo(() => (view === "day" ? startOfDay(anchor) : startOfWeek(anchor)), [view, anchor]);
+  const days = useMemo(() => dayRange(rangeStart, dayCount), [rangeStart, dayCount]);
+  const rangeEnd = useMemo(() => addDays(days[days.length - 1], 1), [days]);
 
-  const { data: resources } = useQuery({ queryKey: ["resources"], queryFn: () => api<Resource[]>("/resources") });
-  const { data: vehicles } = useQuery({ queryKey: ["vehicles-all"], queryFn: () => api<{ items: Vehicle[] }>("/vehicles?take=100") });
+  const { data: resourceRows, error: resError } = useQuery({
+    queryKey: ["resources", "all"],
+    queryFn: () => api<ResourceLite[]>("/resources?all=1"),
+  });
+  const { data: vehicleRows } = useQuery({
+    queryKey: ["vehicles-all"],
+    queryFn: () => api<{ items: Array<{ id: string; licensePlate: string; brand: string; model: string; customerId: string; customer?: { firstName?: string | null; lastName?: string | null; company?: string | null } | null }> }>("/vehicles?take=100"),
+  });
   const { data: appts, error } = useQuery({
-    queryKey: ["appointments", weekStart.toISOString()],
-    queryFn: () => api<Appointment[]>(`/appointments?from=${weekStart.toISOString()}&to=${weekEnd.toISOString()}`),
+    queryKey: ["appointments", rangeStart.toISOString(), rangeEnd.toISOString()],
+    queryFn: () => api<PlannerAppointment[]>(`/appointments?from=${encodeURIComponent(rangeStart.toISOString())}&to=${encodeURIComponent(rangeEnd.toISOString())}`),
   });
 
-  const saveMutation = useMutation({
-    mutationFn: (body: unknown) =>
-      editing
-        ? api(`/appointments/${editing.id}`, { method: "PUT", body: JSON.stringify(body) })
-        : api("/appointments", { method: "POST", body: JSON.stringify(body) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["appointments"] });
-      setModalOpen(false);
-    },
-    onError: (err, vars) => confirmOverride(err, () => saveMutation.mutate({ ...(vars as Record<string, unknown>), override: true })),
-  });
+  const allResources = resourceRows ?? [];
+  const activeResources = allResources.filter((r) => r.active !== false);
 
-  const cancelMutation = useMutation({
-    mutationFn: (id: string) => api(`/appointments/${id}`, { method: "DELETE" }),
+  const visible = useMemo(
+    () => (appts ?? []).filter((a) => !hiddenStatus.has(a.status)),
+    [appts, hiddenStatus]
+  );
+
+  /** Spuren + Sammelspur, wenn in diesem Zeitraum etwas nicht zugewiesen ist. */
+  const lanes = useMemo(() => {
+    const base = buildLanes(activeResources, groupBy);
+    const hasUnassigned = (appts ?? []).some((a) => laneKeyOf(a, groupBy) === UNASSIGNED);
+    return hasUnassigned
+      ? [...base, { key: UNASSIGNED, title: "Nicht zugewiesen", subtitle: "bitte zuordnen", kind: "UNASSIGNED" as const }]
+      : base;
+  }, [activeResources, groupBy, appts]);
+
+  const moveMutation = useMutation({
+    mutationFn: (vars: { id: string; body: Record<string, unknown> }) => api(`/appointments/${vars.id}`, { method: "PUT", body: JSON.stringify(vars.body) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["appointments"] }),
+    onError: (err, vars) => confirmOverride(err, () => moveMutation.mutate({ ...vars, body: { ...(vars.body as object), override: true } })),
   });
 
-  const toLocalDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-  const openNew = (date?: Date, resourceId?: string) => {
-    setEditing(null);
-    setForm({
-      customerId: vehicles?.items[0]?.customerId ?? "", vehicleId: vehicles?.items[0]?.id ?? "",
-      resourceId: resourceId ?? "", mechanicId: "", date: date ? toLocalDate(date) : toLocalDate(new Date()),
-      start: "08:00", end: "10:00", reason: "", notes: "", status: "CONFIRMED", requiredSkill: 0,
-    });
-    setModalOpen(true);
-  };
-
-  const openEdit = (a: Appointment) => {
-    setEditing(a);
-    const s = new Date(a.start), e = new Date(a.end);
-    setForm({
-      customerId: a.customerId, vehicleId: a.vehicleId, resourceId: a.resourceId ?? "", mechanicId: a.mechanicId ?? "",
-      date: toLocalDate(s), start: s.toTimeString().slice(0, 5), end: e.toTimeString().slice(0, 5),
-      reason: a.reason ?? "", notes: a.notes ?? "", status: a.status, requiredSkill: a.requiredSkill ?? 0,
-    });
-    setModalOpen(true);
-  };
-
-  const submit = () => {
-    const body = {
-      customerId: form.customerId, vehicleId: form.vehicleId,
-      resourceId: form.resourceId || undefined,
-      mechanicId: form.mechanicId || undefined,
-      requiredSkill: form.requiredSkill,
-      start: new Date(`${form.date}T${form.start}:00`).toISOString(),
-      end: new Date(`${form.date}T${form.end}:00`).toISOString(),
-      reason: form.reason, notes: form.notes, status: form.status,
+  const moveAppointment = (id: string, target: MoveTarget) => {
+    const appt = (appts ?? []).find((a) => a.id === id);
+    if (!appt) return;
+    const day = target.day ? startOfDay(target.day) : startOfDay(new Date(appt.start));
+    const body: Record<string, unknown> = {
+      start: atMinutes(day, target.startMin).toISOString(),
+      end: atMinutes(day, Math.min(target.endMin, SHOP_END_MIN)).toISOString(),
     };
-    saveMutation.mutate(body);
+    // Beim Ziehen in der «Arbeitsplätze»-Ansicht wird die Bühne gesetzt,
+    // in der «Mitarbeiter»-Ansicht die Person — die andere Zuweisung bleibt.
+    if (groupBy === "station") {
+      body.resourceId = target.laneKey === UNASSIGNED ? undefined : target.laneKey;
+    } else {
+      body.mechanicId = target.laneKey === UNASSIGNED ? undefined : target.laneKey;
+    }
+    moveMutation.mutate({ id, body });
   };
 
-  const dayAppts = (day: Date) =>
-    (appts ?? []).filter((a) => {
-      const d = new Date(a.start);
-      return d.getFullYear() === day.getFullYear() && d.getMonth() === day.getMonth() && d.getDate() === day.getDate();
+  const openNew = (opts: { day?: Date; startMin?: number; laneKey?: string } = {}) => {
+    const day = startOfDay(opts.day ?? (view === "day" ? anchor : new Date()));
+    const startMin = opts.startMin ?? 8 * 60;
+    const start = atMinutes(day, startMin);
+    const end = atMinutes(day, Math.min(startMin + 60, SHOP_END_MIN));
+    const laneIsStation = groupBy === "station";
+    setDraft({
+      customerId: "",
+      vehicleId: vehicleRows?.items[0]?.id ?? "",
+      resourceId: laneIsStation && opts.laneKey && opts.laneKey !== UNASSIGNED ? opts.laneKey : "",
+      mechanicId: !laneIsStation && opts.laneKey && opts.laneKey !== UNASSIGNED ? opts.laneKey : "",
+      start: start.toISOString(),
+      end: end.toISOString(),
+      reason: "",
+      notes: "",
+      status: "CONFIRMED",
+      requiredSkill: 0,
     });
+    setModalOpen(true);
+  };
 
-  const custName = (a: Appointment) => a.customer?.company || (`${a.customer?.firstName ?? ""} ${a.customer?.lastName ?? ""}`.trim() || "Kunde");
+  const openEdit = (a: PlannerAppointment) => {
+    setDraft({
+      id: a.id,
+      customerId: a.customerId ?? "",
+      vehicleId: a.vehicleId ?? "",
+      resourceId: a.resourceId ?? "",
+      mechanicId: a.mechanicId ?? "",
+      start: a.start,
+      end: a.end,
+      reason: a.reason ?? "",
+      notes: a.notes ?? "",
+      status: a.status,
+      requiredSkill: a.requiredSkill ?? 0,
+    });
+    setModalOpen(true);
+  };
+
+  const shift = (dir: -1 | 1) => {
+    if (view === "day") setAnchor((d) => addDays(d, dir));
+    else setAnchor((d) => addDays(d, dir * 7));
+  };
+
+  const rangeLabel =
+    view === "day"
+      ? anchor.toLocaleDateString("de-CH", { weekday: "long", day: "numeric", month: "long" })
+      : `${days[0].toLocaleDateString("de-CH", { day: "numeric", month: "short" })} – ${days[days.length - 1].toLocaleDateString("de-CH", { day: "numeric", month: "short" })}`;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Werkstattplaner</h1>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => { const d = new Date(weekStart); d.setDate(d.getDate() - 7); setWeekStart(d); }}>‹ Woche</Button>
-          <Button variant="secondary" onClick={() => setWeekStart(startOfWeek(new Date()))}>Heute</Button>
-          <Button variant="secondary" onClick={() => { const d = new Date(weekStart); d.setDate(d.getDate() + 7); setWeekStart(d); }}>Woche ›</Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex overflow-hidden rounded-lg border border-slate-300">
+            {(["day", "week"] as View[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1.5 text-sm font-medium ${view === v ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"}`}
+              >
+                {v === "day" ? "Tag" : "Woche"}
+              </button>
+            ))}
+          </div>
+          <div className="flex overflow-hidden rounded-lg border border-slate-300">
+            {(
+              [
+                ["station", "Arbeitsplätze"],
+                ["mechanic", "Mitarbeiter"],
+              ] as Array<[GroupBy, string]>
+            ).map(([g, label]) => (
+              <button
+                key={g}
+                onClick={() => setGroupBy(g)}
+                className={`px-3 py-1.5 text-sm font-medium ${groupBy === g ? "bg-slate-800 text-white" : "bg-white text-slate-700 hover:bg-slate-50"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {view === "week" && (
+            <label className="flex items-center gap-1.5 text-xs text-slate-600">
+              <input type="checkbox" checked={sixDays} onChange={(e) => setSixDays(e.target.checked)} />
+              Samstag
+            </label>
+          )}
           <Button onClick={() => openNew()}>+ Termin</Button>
+          <Button variant="secondary" onClick={() => setAdminOpen(true)}>
+            Arbeitsplätze verwalten
+          </Button>
         </div>
       </div>
 
-      {error && <ErrorMsg error={error} />}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => shift(-1)} aria-label="zurück">
+            ‹
+          </Button>
+          <Button variant="secondary" onClick={() => setAnchor(startOfDay(new Date()))}>
+            Heute
+          </Button>
+          <Button variant="secondary" onClick={() => shift(1)} aria-label="vor">
+            ›
+          </Button>
+          <span className="ml-1 text-sm font-medium text-slate-700">{rangeLabel}</span>
+        </div>
 
-      <div className="grid grid-cols-5 gap-3">
-        {days.map((day) => (
-          <div key={day.toISOString()} className="bg-white rounded-xl border border-slate-200 min-h-80">
-            <div className={`px-3 py-2 border-b border-slate-100 font-semibold text-sm ${day.toDateString() === new Date().toDateString() ? "bg-blue-50 text-blue-700" : ""}`}>
-              {day.toLocaleDateString("de-CH", { weekday: "short", day: "numeric", month: "short" })}
-            </div>
-            <div className="p-2 space-y-2">
-              {dayAppts(day).map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => openEdit(a)}
-                  className="w-full text-left bg-slate-50 hover:bg-blue-50 rounded-lg p-2 text-xs border border-slate-100"
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold">{new Date(a.start).toTimeString().slice(0, 5)}</span>
-                    <Badge color={statusColor[a.status] ?? "slate"}>{a.status === "CONFIRMED" ? "bestätigt" : a.status === "IN_PROGRESS" ? "in Arbeit" : a.status === "DONE" ? "fertig" : a.status === "REQUESTED" ? "beantragt" : "annulliert"}</Badge>
-                  </div>
-                  <div className="font-medium mt-1">{a.vehicle?.licensePlate}</div>
-                  <div className="text-slate-500">{custName(a)}</div>
-                  {a.reason && <div className="text-slate-400 truncate">{a.reason}</div>}
-                  {a.mechanic && <div className="text-blue-600 truncate">👤 {a.mechanic.name}</div>}
-                  {a.resource && <div className="text-slate-500 truncate">🛠 {a.resource.name}</div>}
-                </button>
-              ))}
-              <button onClick={() => openNew(day)} className="w-full text-slate-300 hover:text-blue-500 text-lg leading-none">+</button>
-            </div>
-          </div>
-        ))}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {STATUS_ORDER.map((s) => {
+            const off = hiddenStatus.has(s);
+            return (
+              <button
+                key={s}
+                onClick={() =>
+                  setHiddenStatus((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(s)) next.delete(s);
+                    else next.add(s);
+                    return next;
+                  })
+                }
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-opacity ${
+                  off ? "border-slate-200 text-slate-400 line-through" : "border-slate-300 text-slate-700"
+                }`}
+                title={off ? "Wieder einblenden" : "Ausblenden"}
+              >
+                <span className={`h-2 w-2 rounded-full ${STATUS_META[s].dot}`} />
+                {STATUS_META[s].label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <Card title="Ressourcen (Hebebühnen & Mechaniker)">
-        <div className="flex flex-wrap gap-2">
-          {(resources ?? []).map((r) => (
-            <Badge key={r.id} color={r.type === "LIFT" ? "blue" : r.skillLevel >= 3 ? "purple" : "slate"}>
-              {r.name}{r.jobTitle ? ` · ${r.jobTitle}` : ""}
-            </Badge>
-          ))}
+      {(error || resError) && <ErrorMsg error={error ?? resError} />}
+
+      {view === "day" ? (
+        <TimeGrid
+          day={days[0]}
+          lanes={lanes}
+          appointments={visible}
+          groupBy={groupBy}
+          onCreate={(laneKey, startMin, endMin) => openNew({ day: days[0], startMin, laneKey })}
+          onOpen={openEdit}
+          onMove={moveAppointment}
+        />
+      ) : (
+        <WeekGrid
+          days={days}
+          lanes={lanes}
+          appointments={visible}
+          groupBy={groupBy}
+          today={new Date()}
+          onCreate={(laneKey, day, startMin) => openNew({ day, startMin, laneKey })}
+          onOpen={openEdit}
+          onMove={moveAppointment}
+        />
+      )}
+
+      {isSameDay(days[0], new Date()) && view === "day" && (
+        <p className="text-xs text-slate-500">
+          Tipp: in eine leere Fläche klicken legt einen Termin an, ein Block lässt sich greifen und in eine andere Spur ziehen.
+        </p>
+      )}
+
+      <AppointmentModal
+        open={modalOpen}
+        initial={draft}
+        resources={allResources}
+        vehicles={vehicleRows?.items ?? []}
+        isAdmin={isAdmin}
+        onClose={() => setModalOpen(false)}
+        onSaved={() => qc.invalidateQueries({ queryKey: ["appointments"] })}
+      />
+
+      <ResourceAdmin
+        open={adminOpen}
+        resources={allResources}
+        onClose={() => setAdminOpen(false)}
+        onChanged={() => qc.invalidateQueries({ queryKey: ["resources"] })}
+      />
+
+      {/* Kleine Übersicht über die Auslastung der Woche — hilft beim Planen. */}
+      <Card title="Kurz-Übersicht">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
+          <span>
+            <strong className="text-slate-900">{visible.length}</strong> Termine im Zeitraum
+          </span>
+          <span>
+            <strong className="text-slate-900">{lanes.filter((l) => l.kind !== "UNASSIGNED").length}</strong>{" "}
+            {groupBy === "station" ? "Arbeitsplätze" : "Mitarbeiter"}
+          </span>
+          <span>
+            <strong className="text-slate-900">{visible.filter((a) => !a.resourceId && !a.mechanicId).length}</strong> ohne Zuweisung
+          </span>
         </div>
       </Card>
-
-      <Modal open={modalOpen} title={editing ? "Termin bearbeiten" : "Neuer Termin"} onClose={() => setModalOpen(false)}>
-        {saveMutation.error && <ErrorMsg error={saveMutation.error} />}
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Fahrzeug">
-            <Select value={form.vehicleId} onChange={(e) => {
-              const v = vehicles?.items.find((x) => x.id === e.target.value);
-              setForm((f) => ({ ...f, vehicleId: e.target.value, customerId: v?.customerId ?? f.customerId }));
-            }}>
-              {(vehicles?.items ?? []).map((v) => (
-                <option key={v.id} value={v.id}>{v.licensePlate} — {v.brand} {v.model}{v.customer ? ` (${v.customer.company || v.customer.lastName})` : ""}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Benötigte Qualifikation">
-            <Select value={form.requiredSkill} onChange={(e) => {
-              const req = Number(e.target.value);
-              setForm((f) => {
-                const mech = resources?.find((r) => r.id === f.mechanicId);
-                const insufficient = mech && mech.skillLevel < req;
-                return { ...f, requiredSkill: req, mechanicId: insufficient ? "" : f.mechanicId };
-              });
-            }}>
-              {SKILL_LEVELS.map((lvl) => <option key={lvl} value={lvl}>{SKILL_LABELS[lvl]}</option>)}
-            </Select>
-          </Field>
-          <Field label="Hebebühne">
-            <Select value={form.resourceId} onChange={(e) => setForm((f) => ({ ...f, resourceId: e.target.value }))}>
-              <option value="">— keine —</option>
-              {(resources ?? []).filter((r) => r.skillLevel === 0).map((r) => (
-                <option key={r.id} value={r.id}>{r.name}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label={form.requiredSkill > 0 ? `Mechaniker (min. ${SKILL_SHORT[form.requiredSkill]})` : "Mechaniker"}>
-            <Select value={form.mechanicId} onChange={(e) => setForm((f) => ({ ...f, mechanicId: e.target.value }))}>
-              <option value="">— keine —</option>
-              {(resources ?? []).filter((r) => r.type === "MECHANIC" && (user?.role === "ADMIN" && bypassSkill ? true : r.skillLevel >= form.requiredSkill)).map((r) => (
-                <option key={r.id} value={r.id}>{r.name}{r.jobTitle ? ` — ${r.jobTitle}` : ""}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Datum"><Input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Von"><Input type="time" value={form.start} onChange={(e) => setForm((f) => ({ ...f, start: e.target.value }))} /></Field>
-            <Field label="Bis"><Input type="time" value={form.end} onChange={(e) => setForm((f) => ({ ...f, end: e.target.value }))} /></Field>
-          </div>
-          <Field label="Status">
-            <Select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
-              <option value="CONFIRMED">Bestätigt</option>
-              <option value="REQUESTED">Beantragt</option>
-              <option value="IN_PROGRESS">In Arbeit</option>
-              <option value="DONE">Fertig</option>
-            </Select>
-          </Field>
-          <Field label="Grund"><Input value={form.reason} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))} placeholder="Service, Reparatur…" /></Field>
-        </div>
-        <div className="mt-4"><Field label="Notizen"><Textarea rows={2} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} /></Field></div>
-        <div className="flex gap-3 mt-6">
-          <Button onClick={submit} disabled={saveMutation.isPending || form.end <= form.start}>{saveMutation.isPending ? "Speichert…" : "Speichern"}</Button>
-          <Button variant="secondary" onClick={() => setModalOpen(false)}>Abbrechen</Button>
-          {editing && (
-            <Button variant="danger" className="ml-auto" onClick={() => { cancelMutation.mutate(editing.id); setModalOpen(false); }}>
-              Termin annullieren
-            </Button>
-          )}
-        </div>
-      </Modal>
     </div>
   );
 }
+
+/** Für die Kundenanzeige anderswo im Repo weiterverwendbar. */
+export { customerLabel };

@@ -4,6 +4,8 @@ import { api, apiDownload } from "../lib/api.js";
 import { useAuth } from "../lib/auth.js";
 import { Badge, Button, Card, Empty, ErrorMsg, Field, Input, Modal, Select, Textarea, formatCHF } from "../components/ui.js";
 import { SKILL_LABELS, SKILL_SHORT } from "../lib/skills.js";
+import { Combobox } from "../components/Combobox.js";
+import { customerLabel } from "../components/AppointmentModal.js";
 import { confirmOverride } from "../lib/override.js";
 
 interface Line { type: "LABOR" | "PART" | "EXTERNAL" | "FLAT"; description: string; qty: number; unit: string; unitPrice: number; vatRate: number; partId?: string }
@@ -265,21 +267,26 @@ export default function WorkOrdersPage() {
         )}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Field label="Kunde / Fahrzeug">
-            <Select value={form.vehicleId} onChange={(e) => {
-              for (const c of customers?.items ?? []) {
-                const v = c.vehicles.find((x) => x.id === e.target.value);
-                if (v) { setForm((f) => ({ ...f, customerId: c.id, vehicleId: v.id })); return; }
-              }
-            }}>
-              <option value="">— wählen —</option>
-              {(customers?.items ?? []).flatMap((c) =>
-                c.vehicles.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.licensePlate} — {c.company || `${c.firstName ?? ""} ${c.lastName ?? ""}`}
-                  </option>
-                ))
+            <Combobox
+              value={form.vehicleId}
+              onChange={(id) => {
+                for (const c of customers?.items ?? []) {
+                  const v = c.vehicles.find((x) => x.id === id);
+                  if (v) {
+                    setForm((f) => ({ ...f, customerId: c.id, vehicleId: v.id }));
+                    return;
+                  }
+                }
+              }}
+              placeholder="Name oder Kennzeichen …"
+              options={(customers?.items ?? []).flatMap((c) =>
+                c.vehicles.map((v) => ({
+                  value: v.id,
+                  label: `${customerLabel(c)} — ${v.brand} ${v.model}`,
+                  hint: v.licensePlate,
+                }))
               )}
-            </Select>
+            />
           </Field>
           <Field label="Status">
             <Select value={selected?.status ?? "OPEN"} disabled={!selected}
