@@ -37,6 +37,20 @@ Bei Schema-Änderungen zusätzlich **vor** dem Start:
 - Nach Schema-Änderungen lokal `npx prisma generate` nicht vergessen, sonst
   kennt TypeScript die neuen Modelle nicht.
 
+**Zwei Fallen beim `db push` / Seed (12.11.2026 selbst erlebt):**
+
+1. `docker compose run --rm --no-deps api npx prisma db push` benutzt das
+   **alte Image**, wenn man nicht vorher `build` ausgeführt hat — es vergleicht
+   dann das alte Schema mit der DB und meldet fälschlich "already in sync".
+   Richtig: erst `docker compose … build api`, dann `run … db push`, dann `up -d`.
+2. `seed-demo.ts` ist idempotent, aber der Werkstattplan ist relativ zum
+   **Montag des Lauf-Tags** — ein erneuter Lauf in einer späteren Woche legt
+   dieselben Termine noch einmal an (Dup-Prüfung prüft nur Start+Fahrzeug+Grund).
+   Also nur laufen lassen, wenn der Plan wirklich aufgefüllt werden soll;
+   ggf. vorher zählen (`select count(*) from "Appointment";`) und nach
+   `createdAt` wieder löschen. `prisma/backfill-plan.ts` (Bühne + Mechaniker
+   nachziehen) ist dagegen jederzeit gefahrlos lauffähig.
+
 ## Auth — bitte nicht beiläufig umbauen
 
 Zwei Sessions, die zusammengehören:
