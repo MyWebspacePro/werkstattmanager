@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, clearTokens, getTokens, setTokens } from "./api.js";
+import { api, clearTokens, setAccessToken } from "./api.js";
 
 export interface CurrentUser {
   id: string;
@@ -27,26 +27,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!getTokens().access) {
-      setLoading(false);
-      return;
-    }
+    // Session aus dem httpOnly-Cookie wiederherstellen: /auth/me liefert ohne
+    // Access-Token 401, api() holt sich per /auth/refresh ein neues und
+    // wiederholt den Aufruf. Kein Token im localStorage, nichts zu stehlen.
     api<CurrentUser>("/auth/me")
       .then(setUser)
-      .catch(() => clearTokens())
+      .catch(() => setUser(null))
       .finally(() => setLoading(false));
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const data = await api<{ accessToken: string; refreshToken: string; user: CurrentUser }>("/auth/login", {
+    const data = await api<{ accessToken: string; user: CurrentUser }>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
-    setTokens(data.accessToken, data.refreshToken);
+    setAccessToken(data.accessToken);
     setUser(data.user);
   }, []);
 
   const logout = useCallback(() => {
+    // Session serverseitig sperren, damit das Cookie nicht mehr nutzbar ist.
+    void fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
     clearTokens();
     setUser(null);
     window.location.href = "/login";

@@ -11,6 +11,10 @@ const schema = z.object({
     .default("https://autowerkstattsoftware.aiconso.eu,http://localhost:5173"),
   JWT_SECRET: z.string().min(10).default("dev-secret-change-me-in-production"),
   JWT_REFRESH_SECRET: z.string().min(10).default("dev-refresh-secret-change-me-too"),
+  // Access-Token kurz (begrenzt den Schaden eines Diebstahls),
+  // Refresh-Token lang, aber rotierbar und widerrufbar (Session-Tabelle).
+  ACCESS_TOKEN_TTL: z.string().default("15m"),
+  REFRESH_TOKEN_TTL: z.string().default("30d"),
   SMTP_HOST: z.string().default("localhost"),
   SMTP_PORT: z.coerce.number().default(1025),
   SMTP_USER: z.string().default(""),

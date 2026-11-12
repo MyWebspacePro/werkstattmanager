@@ -33,6 +33,28 @@ model User {
   timeEntries TimeEntry[]
   auditLogs   AuditLog[]
   stockMoves  StockMovement[]
+  sessions    Session[]
+}
+
+// Refresh-Token-Sitzung. Nur der SHA-256-Hash des Tokens wird gespeichert,
+// nie das Token selbst. Beim Refresh wird rotiert: alte Session revokedAt
+// bekommen, neue anlegen. Wird ein bereits rotiertes Token erneut benutzt,
+// ist das ein Diebstahl-Verdacht -> alle Sessions des Users werden gesperrt.
+model Session {
+  id         String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  replacedBy String?
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Setting {

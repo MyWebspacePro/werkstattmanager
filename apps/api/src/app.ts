@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import type { FastifyError } from "fastify";
 import cors from "@fastify/cors";
+import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
 import { ZodError } from "zod";
 import { env } from "./env.js";
@@ -33,8 +34,11 @@ export async function buildApp() {
 
   // global: false -> greift nur, wo eine Route es per config.rateLimit einschaltet.
   // hook: preHandler, damit der Body schon geparst ist und der Key auf die
-  // E-Mail gelegt werden kann (nicht auf die IP, die sich fälschen liesse).
+  // E-Mail gelegt werden kann (nicht auf die IP, die sich fälschbar ist).
   await app.register(rateLimit, { global: false, hook: "preHandler" });
+
+  // Refresh-Token liegt in einem httpOnly-Cookie -> braucht Cookie-Parsing.
+  await app.register(cookie);
 
   const corsOrigins = env.CORS_ORIGINS.split(",")
     .map((o) => o.trim())

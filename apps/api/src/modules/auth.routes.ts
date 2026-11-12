@@ -1,12 +1,18 @@
-import type { FastifyInstance } from "fastify";
+import crypto from "node:crypto";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { audit } from "../lib/audit.js";
+import { env } from "../env.js";
 import {
+  REFRESH_COOKIE,
   authGuard,
+  hashToken,
+  refreshExpiry,
   signAccessToken,
   signRefreshToken,
+  ttlToMs,
   verifyRefreshToken,
 } from "../plugins/auth.js";
 
@@ -19,6 +25,57 @@ const loginSchema = z.object({
 // unbekannten oder inaktiven Konten. Verhindert, dass die Antwortzeit verraet,
 // welche E-Mail-Adressen in der Werkstatt existieren (User-Enumeration).
 const DUMMY_PASSWORD_HASH = "$2a$10$r2MWaF8cGCRkxo9TIscNnuzXgi0ReIFi2rpb/3icwOfdHXpdIurdS";
+
+/**
+ * Refresh-Token als httpOnly-Cookie. httpOnly -> fuer JavaScript (und damit bei
+ * XSS) nicht lesbar. SameSite=strict -> wird bei fremden Seiten nicht mitgeschickt,
+ * das verhindert CSRF. secure automatisch, sobald TLS vor der App endet.
+ */
+function setRefreshCookie(reply: FastifyReply, token: string, req: FastifyRequest): void {
+  reply.setCookie(REFRESH_COOKIE, token, {
+    httpOnly: true,
+    secure: req.protocol === "https",
+    sameSite: "strict",
+    path: "/api/auth",
+    maxAge: Math.floor(ttlToMs(env.REFRESH_TOKEN_TTL) / 1000),
+  });
+}
+
+function clearRefreshCookie(reply: FastifyReply, req: FastifyRequest): void {
+  reply.clearCookie(REFRESH_COOKIE, {
+    httpOnly: true,
+    secure: req.protocol === "https",
+    sameSite: "strict",
+    path: "/api/auth",
+  });
+}
+
+function meta(req: FastifyRequest): { userAgent: string | null; ip: string } {
+  return {
+    userAgent: (req.headers["user-agent"] ?? "").slice(0, 255) || null,
+    ip: req.ip,
+  };
+}
+
+/** Neue Session + passenden Refresh-Token erzeugen und in der DB ablegen. */
+async function createSession(userId: string, req: FastifyRequest): Promise<{ sid: string; token: string }> {
+  const sid = crypto.randomUUID();
+  const token = signRefreshToken(sid);
+  const { userAgent, ip } = meta(req);
+  await prisma.session.create({
+    data: { id: sid, userId, tokenHash: hashToken(token), userAgent, ip, expiresAt: refreshExpiry() },
+  });
+  return { sid, token };
+}
+
+/** Alle noch offenen Sessions eines Users sperren (Notfall bei Diebstahl-Verdacht). */
+async function revokeAllSessions(userId: string): Promise<number> {
+  const r = await prisma.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  return r.count;
+}
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   // Brute-Force-Bremse: 5 Fehlversuche pro Minute und E-Mail, dann 429.
@@ -44,31 +101,90 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(401).send({ error: "E-Mail oder Passwort falsch" });
     }
     const tokenUser = { id: user.id, email: user.email, name: user.name, role: user.role };
+    const { sid, token } = await createSession(user.id, req);
+    setRefreshCookie(reply, token, req);
     await audit(user.id, "LOGIN", "User", user.id);
-    return {
-      accessToken: signAccessToken(tokenUser),
-      refreshToken: signRefreshToken(tokenUser),
-      user: tokenUser,
-    };
+    // Refresh-Token nur im Cookie, nie im JSON.
+    return { accessToken: signAccessToken(tokenUser, sid), user: tokenUser };
   });
 
   app.post("/refresh", async (req, reply) => {
-    const { refreshToken } = (req.body ?? {}) as { refreshToken?: string };
-    if (!refreshToken) return reply.code(400).send({ error: "refreshToken fehlt" });
-    let userId: string;
+    const token = req.cookies[REFRESH_COOKIE];
+    if (!token) return reply.code(400).send({ error: "refreshToken fehlt" });
+
+    let sid: string;
     try {
-      userId = verifyRefreshToken(refreshToken).id;
+      sid = verifyRefreshToken(token).sid;
     } catch {
+      clearRefreshCookie(reply, req);
       return reply.code(401).send({ error: "Sitzung abgelaufen, bitte neu einloggen" });
     }
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.active) return reply.code(401).send({ error: "Konto inaktiv" });
+
+    const session = await prisma.session.findUnique({ where: { id: sid } });
+    if (!session) {
+      clearRefreshCookie(reply, req);
+      return reply.code(401).send({ error: "Sitzung abgelaufen, bitte neu einloggen" });
+    }
+
+    // Hash passt nicht -> Token geaendert oder aus einer anderen Quelle.
+    if (session.tokenHash !== hashToken(token)) {
+      const n = await revokeAllSessions(session.userId);
+      await audit(session.userId, "SESSION_FORGED", "Session", session.id);
+      clearRefreshCookie(reply, req);
+      return reply.code(401).send({ error: `Sitzung aus Sicherheitsgruenden beendet (${n})` });
+    }
+
+    // Session wurde bereits rotiert, das alte Token wird erneut benutzt:
+    // das ist der klassische Diebstahl-Nachweis -> alles sperren.
+    if (session.revokedAt) {
+      await revokeAllSessions(session.userId);
+      await audit(session.userId, "SESSION_REUSE_DETECTED", "Session", session.id);
+      clearRefreshCookie(reply, req);
+      return reply.code(401).send({ error: "Sitzung aus Sicherheitsgruenden beendet" });
+    }
+
+    if (session.expiresAt < new Date()) {
+      clearRefreshCookie(reply, req);
+      return reply.code(401).send({ error: "Sitzung abgelaufen, bitte neu einloggen" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: session.userId } });
+    if (!user || !user.active) {
+      clearRefreshCookie(reply, req);
+      return reply.code(401).send({ error: "Konto inaktiv" });
+    }
+
     const tokenUser = { id: user.id, email: user.email, name: user.name, role: user.role };
-    return { accessToken: signAccessToken(tokenUser), user: tokenUser };
+    const next = await createSession(user.id, req);
+
+    // Rotation: alte Session sperren, neue anlegen — atomar.
+    await prisma.$transaction([
+      prisma.session.update({
+        where: { id: session.id },
+        data: { revokedAt: new Date(), lastUsedAt: new Date(), replacedBy: next.sid },
+      }),
+    ]);
+    setRefreshCookie(reply, next.token, req);
+    return { accessToken: signAccessToken(tokenUser, next.sid), user: tokenUser };
+  });
+
+  app.post("/logout", async (req, reply) => {
+    const token = req.cookies[REFRESH_COOKIE];
+    if (token) {
+      try {
+        const { sid } = verifyRefreshToken(token);
+        await prisma.session.updateMany({ where: { id: sid }, data: { revokedAt: new Date() } });
+      } catch {
+        // Ungültiges Token: Cookie trotzdem entfernen.
+      }
+    }
+    clearRefreshCookie(reply, req);
+    return { ok: true };
   });
 
   app.get("/me", { preHandler: authGuard }, async (req) => {
-    return req.user;
+    const { id, email, name, role } = req.user!;
+    return { id, email, name, role };
   });
 
   app.put(
@@ -88,6 +204,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       await prisma.user.update({
         where: { id: user.id },
         data: { passwordHash: await bcrypt.hash(body.newPassword, 10) },
+      });
+      // Alle anderen Sessions beenden — ein geklautes Token wird so wertlos.
+      // Die aktuelle bleibt bestehen, damit niemand ausgesperrt wird.
+      const currentSid = req.user!.sid;
+      await prisma.session.updateMany({
+        where: { userId: user.id, revokedAt: null, ...(currentSid ? { NOT: { id: currentSid } } : {}) },
+        data: { revokedAt: new Date() },
       });
       await audit(user.id, "PASSWORD_CHANGE", "User", user.id);
       return { ok: true };

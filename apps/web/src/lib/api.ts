@@ -1,22 +1,20 @@
-// API-Client mit Token-Verwaltung und automatischem Refresh.
-const TOKEN_KEY = "wm_access";
-const REFRESH_KEY = "wm_refresh";
+// API-Client.
+// Access-Token: nur im Speicher (kein localStorage) -> bei XSS ist nach einem
+// Reload nichts zu stehlen, und das Token ist nach 15 Minuten ohnehin tot.
+// Refresh-Token: httpOnly-Cookie beim Server, wird vom Browser automatisch
+// mitgeschickt und ist fuer JavaScript nicht lesbar.
+let accessToken: string | null = null;
 
-export function getTokens() {
-  return {
-    access: localStorage.getItem(TOKEN_KEY),
-    refresh: localStorage.getItem(REFRESH_KEY),
-  };
+export function getAccessToken(): string | null {
+  return accessToken;
 }
 
-export function setTokens(access: string, refresh?: string) {
-  localStorage.setItem(TOKEN_KEY, access);
-  if (refresh) localStorage.setItem(REFRESH_KEY, refresh);
+export function setAccessToken(token: string): void {
+  accessToken = token;
 }
 
-export function clearTokens() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
+export function clearTokens(): void {
+  accessToken = null;
 }
 
 export class ApiError extends Error {
@@ -32,21 +30,18 @@ export class ApiError extends Error {
 }
 
 async function refreshAccess(): Promise<boolean> {
-  const { refresh } = getTokens();
-  if (!refresh) return false;
   const res = await fetch("/api/auth/refresh", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken: refresh }),
+    credentials: "include", // Refresh-Cookie mitschicken
   });
   if (!res.ok) return false;
   const data = await res.json();
-  setTokens(data.accessToken);
+  setAccessToken(data.accessToken);
   return true;
 }
 
 export async function api<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
-  const { access } = getTokens();
+  const access = getAccessToken();
   const res = await fetch(`/api${path}`, {
     ...options,
     headers: {
@@ -76,7 +71,7 @@ export async function api<T>(path: string, options: RequestInit = {}, retry = tr
 }
 
 export async function apiDownload(path: string, filename: string): Promise<void> {
-  const { access } = getTokens();
+  const access = getAccessToken();
   const res = await fetch(`/api${path}`, { headers: access ? { Authorization: `Bearer ${access}` } : {} });
   if (!res.ok) throw new ApiError(res.status, "Download fehlgeschlagen");
   const blob = await res.blob();
