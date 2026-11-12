@@ -56,7 +56,12 @@ export async function api<T>(path: string, options: RequestInit = {}, retry = tr
       return api<T>(path, options, false);
     }
     clearTokens();
-    window.location.href = "/login";
+    // Nur umleiten, wenn wir nicht schon auf /login sind. Sonst:
+    // /auth/me scheitert -> Redirect auf /login -> Seite lädt neu ->
+    // AuthProvider prüft erneut -> Redirect ... (flackernde Endlosschleife).
+    if (window.location.pathname !== "/login") {
+      window.location.href = "/login";
+    }
     throw new ApiError(401, "Sitzung abgelaufen");
   }
 
