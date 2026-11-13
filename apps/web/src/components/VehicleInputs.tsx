@@ -75,7 +75,7 @@ export function BrandField({ value, onChange, required = false, disabled = false
             <option key={b} value={b}>{b}</option>
           ))}
         </optgroup>
-        <option value={OTHER}>Andere Marke …</option>
+        <option value={OTHER}>+ Neue Marke …</option>
       </Select>
     </Field>
   );
