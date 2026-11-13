@@ -11,8 +11,9 @@ import { Button, Field, Input, Select } from "./ui.js";
 export const BRAND_CATALOG: { usual: string[]; other: string[] } = {
   // Sehr verbreitet in CH-Werkstätten — inkl. der aktuellen E-Marken.
   usual: [
-    "Audi", "BMW", "Citroën", "Dacia", "Fiat", "Ford", "Hyundai", "Mercedes-Benz",
-    "Nissan", "Opel", "Peugeot", "Renault", "Seat", "Skoda", "Toyota", "Volkswagen", "Volvo",
+    "Audi", "BMW", "BYD", "Citroën", "Dacia", "Fiat", "Ford", "Hyundai",
+    "Mercedes-Benz", "Nissan", "Opel", "Peugeot", "Polestar", "Renault", "Seat",
+    "Skoda", "Tesla", "Toyota", "Volkswagen", "Volvo", "XPeng", "Zeekr",
   ],
   // Weitere Marken mit CH-Präsenz (Händler, Importeure, Flotten).
   other: [
