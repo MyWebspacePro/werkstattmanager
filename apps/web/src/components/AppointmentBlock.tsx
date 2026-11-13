@@ -27,13 +27,16 @@ export function AppointmentBlock({ a, top, height, compact, showResource, dragga
   const start = fmtTime(new Date(a.start));
   const end = fmtTime(new Date(a.end));
   const plate = a.vehicle?.licensePlate ?? "—";
-  const showTime = height >= 26 || (compact && height >= 13);
-  const showReason = height >= (compact ? 32 : 52) && !!a.reason;
-  const showPerson = height >= (compact ? 48 : 74);
+  // Kurztermine (unter ~35 px = 2 Textzeilen) bekommen eine einzige Zeile
+  // «Uhrzeit Kennzeichen» — sonst wird Text unten abgeschnitten.
+  const oneLine = height < 35;
+  // 3. Zeile (Grund) ab ~3 Textzeilen, 4. (Bühne/Person) ab 4.
+  const showReason = height >= (compact ? 48 : 56) && !!a.reason;
+  const showPerson = height >= (compact ? 58 : 62);
   const laneLabel = showResource ? (a.resource?.name ? `🛠 ${a.resource.name}` : null) : a.mechanic ? `👤 ${a.mechanic.name}` : null;
-  const showLane = height >= (compact ? 48 : 74) && laneLabel;
+  const showLane = height >= (compact ? 58 : 62) && laneLabel;
   // Kompakt: Bühne/Person als Kürzel direkt hinter das Kennzeichen — passt in
-  // jeden Block, auch 30-Minuten-Slots im Wochen-Gantt.
+  // jeden mehrzeiligen Block.
   const compactLane = compact
     ? showResource
       ? a.resource?.name?.replace(/^Hebebühne\s*/, "Hb ").replace(/^Reifenwechselplatz/, "RWZ")
@@ -59,19 +62,25 @@ export function AppointmentBlock({ a, top, height, compact, showResource, dragga
       }}
       title={`${start}–${end} · ${plate} · ${custName(a)}${a.reason ? ` · ${a.reason}` : ""}`}
       style={{ top, height: Math.max(height, 22) }}
-      className={`absolute left-0.5 right-0.5 overflow-hidden rounded-md border px-1.5 py-1 text-left text-[11px] leading-tight shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-400 ${meta.block} ${
+      className={`absolute left-0.5 right-0.5 overflow-hidden rounded-md border px-1.5 ${compact ? "py-0.5" : "py-1"} text-left text-[11px] leading-tight shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-400 ${meta.block} ${
         draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
       } ${dragging ? "opacity-40" : ""}`}
     >
-      {showTime && (
-        <div className="font-semibold tabular-nums opacity-80">
-          {compact ? start : `${start}–${end}`}
+      {oneLine ? (
+        <div className="truncate font-semibold tabular-nums">
+          {start} {plate}
         </div>
+      ) : (
+        <>
+          <div className="font-semibold tabular-nums opacity-80">
+            {compact ? start : `${start}–${end}`}
+          </div>
+          <div className="truncate font-semibold">
+            {plate}
+            {compactLane ? <span className="font-normal opacity-70"> · {compactLane}</span> : null}
+          </div>
+        </>
       )}
-      <div className="truncate font-semibold">
-        {plate}
-        {compactLane ? <span className="font-normal opacity-70"> · {compactLane}</span> : null}
-      </div>
       {!compact && <div className="truncate opacity-70">{custName(a)}</div>}
       {showReason && <div className="truncate opacity-60">{a.reason}</div>}
       {showLane && <div className="truncate opacity-70">{laneLabel}</div>}

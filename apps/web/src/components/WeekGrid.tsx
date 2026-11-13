@@ -23,7 +23,7 @@ interface Props {
 const LABEL_W = 150;
 
 /** Wochen-Gantt: Zeilen = Arbeitsplätze bzw. Mitarbeiter, Spalten = Tage. */
-export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.6, groupBy, today, onCreate, onOpen, onMove, shopStartMin = SHOP_START_MIN, shopEndMin = SHOP_END_MIN }: Props) {
+export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.7, groupBy, today, onCreate, onOpen, onMove, shopStartMin = SHOP_START_MIN, shopEndMin = SHOP_END_MIN }: Props) {
   const drag = useGridDrag(pxPerMin);
   const TOTAL_MIN = shopEndMin - shopStartMin;
   const bodyHeight = TOTAL_MIN * pxPerMin;
@@ -46,7 +46,7 @@ export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.6, groupBy, t
             {groupBy === "station" ? "Arbeitsplatz" : "Mitarbeiter"}
           </div>
           {days.map((d) => (
-            <div key={d.toISOString()} className={`min-w-[150px] flex-1 border-l border-slate-100 px-2 py-2 text-center ${isToday(d) ? "bg-blue-50 text-blue-700" : ""}`}>
+            <div key={d.toISOString()} className={`min-w-[150px] flex-1 border-l border-slate-200 px-2 py-2 text-center ${isToday(d) ? "bg-blue-50 text-blue-700" : ""}`}>
               <div className="text-sm font-semibold">{weekdayShort(d)} {d.getDate()}.</div>
               <div className="text-[11px] text-slate-500">{d.toLocaleDateString("de-CH", { month: "short" })}</div>
             </div>
@@ -55,12 +55,12 @@ export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.6, groupBy, t
 
         {/* Spur-Zeilen */}
         {lanes.map((lane) => (
-          <div key={lane.key} className="flex border-b border-slate-100 last:border-b-0">
-            <div className="sticky left-0 z-10 shrink-0 overflow-hidden border-r border-slate-100 bg-white px-2 py-1" style={{ width: LABEL_W, height: bodyHeight }}>
+          <div key={lane.key} className="flex border-b border-slate-300 last:border-b-0">
+            <div className="sticky left-0 z-10 shrink-0 overflow-hidden border-r border-slate-200 bg-white px-2 py-1" style={{ width: LABEL_W, height: bodyHeight }}>
               <div className={`text-xs font-semibold leading-tight ${lane.kind === "UNASSIGNED" ? "text-amber-700" : "text-slate-800"}`}>{lane.title}</div>
               {lane.subtitle && <div className="text-[10px] leading-tight text-slate-500">{lane.subtitle}</div>}
-              {HOURS.filter((m) => m % 120 === 0).map((m) => (
-                <div key={m} className="absolute right-1 text-[10px] tabular-nums text-slate-400" style={{ top: (m - shopStartMin) * pxPerMin + 26 }}>
+              {HOURS.filter((m) => m > shopStartMin).map((m) => (
+                <div key={m} className="absolute right-1 -translate-y-1/2 text-[10px] tabular-nums text-slate-400" style={{ top: (m - shopStartMin) * pxPerMin }}>
                   {String(Math.floor(m / 60)).padStart(2, "0")}:00
                 </div>
               ))}
@@ -71,7 +71,7 @@ export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.6, groupBy, t
               return (
                 <div
                   key={day.toISOString()}
-                  className={`relative min-w-[150px] flex-1 border-l border-slate-100 ${lane.kind === "UNASSIGNED" ? "bg-amber-50/40" : ""}`}
+                  className={`relative min-w-[150px] flex-1 border-l border-slate-200 ${lane.kind === "UNASSIGNED" ? "bg-amber-50/40" : ""}`}
                   style={{ height: bodyHeight }}
                   onClick={(e) => {
                     if (e.target !== e.currentTarget) return;
@@ -87,7 +87,7 @@ export function WeekGrid({ days, lanes, appointments, pxPerMin = 0.6, groupBy, t
                   {HOURS.map((m) => (
                     <div
                       key={m}
-                      className={`pointer-events-none absolute inset-x-0 ${m % 60 === 0 ? "border-t border-slate-100" : "border-t border-dashed border-slate-50"}`}
+                      className={`pointer-events-none absolute inset-x-0 ${m % 60 === 0 ? "border-t border-slate-200" : "border-t border-dashed border-slate-100"}`}
                       style={{ top: (m - shopStartMin) * pxPerMin }}
                     />
                   ))}

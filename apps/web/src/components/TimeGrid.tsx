@@ -39,7 +39,7 @@ export function TimeGrid({ day, lanes, appointments, pxPerMin = 1.15, groupBy, o
         <div className="sticky top-0 z-20 flex border-b border-slate-200 bg-white">
           <div className="w-14 shrink-0" />
           {lanes.map((lane) => (
-            <div key={lane.key} className="min-w-[160px] flex-1 border-l border-slate-100 px-2 py-2">
+            <div key={lane.key} className="min-w-[160px] flex-1 border-l border-slate-200 px-2 py-2">
               <div className={`truncate text-sm font-semibold ${lane.kind === "UNASSIGNED" ? "text-amber-700" : "text-slate-800"}`}>
                 {lane.title}
               </div>
@@ -64,7 +64,7 @@ export function TimeGrid({ day, lanes, appointments, pxPerMin = 1.15, groupBy, o
             return (
               <div
                 key={lane.key}
-                className={`relative min-w-[160px] flex-1 border-l border-slate-100 ${lane.kind === "UNASSIGNED" ? "bg-amber-50/40" : ""}`}
+                className={`relative min-w-[160px] flex-1 border-l border-slate-200 ${lane.kind === "UNASSIGNED" ? "bg-amber-50/40" : ""}`}
                 style={{ height: bodyHeight }}
                 onClick={(e) => {
                   if (e.target !== e.currentTarget) return;
@@ -77,8 +77,12 @@ export function TimeGrid({ day, lanes, appointments, pxPerMin = 1.15, groupBy, o
                   if (moved) onMove?.(moved.id, { laneKey: lane.key, startMin: moved.startMin, endMin: moved.endMin });
                 }}
               >
-                {HOURS.map((m) => (
-                  <div key={m} className="pointer-events-none absolute inset-x-0 border-t border-slate-100" style={{ top: (m - shopStartMin) * pxPerMin }} />
+                {Array.from({ length: TOTAL_MIN / 30 + 1 }, (_, i) => shopStartMin + i * 30).map((m) => (
+                  <div
+                    key={m}
+                    className={`pointer-events-none absolute inset-x-0 ${m % 60 === 0 ? "border-t border-slate-200" : "border-t border-dashed border-slate-100"}`}
+                    style={{ top: (m - shopStartMin) * pxPerMin }}
+                  />
                 ))}
 
                 {items.map((a) => {
