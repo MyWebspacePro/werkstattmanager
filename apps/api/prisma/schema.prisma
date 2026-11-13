@@ -551,6 +551,7 @@ enum LoanerStatus {
 model LoanerVehicle {
   id        String       @id @default(cuid())
   plate     String       @unique
+  vin       String?
   brand     String
   model     String
   status    LoanerStatus @default(AVAILABLE)

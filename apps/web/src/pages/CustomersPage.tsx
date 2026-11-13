@@ -13,14 +13,14 @@ interface Customer {
   consents: { type: string; granted: boolean }[];
 }
 
-const emptyVehicleRow = { plate: "", brand: "", model: "", year: "", mileage: "" };
+const emptyVehicleRow = { plate: "", vin: "", brand: "", model: "", year: "", mileage: "" };
 const emptyForm = {
   type: "PRIVATE" as "PRIVATE" | "COMPANY" | "FLEET", firstName: "", lastName: "", company: "", email: "", phone: "",
   street: "", zip: "", city: "", notes: "", emailMarketingConsent: false, consentSource: "",
   vehicles: [{ ...emptyVehicleRow }],
 };
 
-const emptyVehicle = { licensePlate: "", brand: "", model: "", year: "", mileage: "" };
+const emptyVehicle = { licensePlate: "", vin: "", brand: "", model: "", year: "", mileage: "" };
 
 export default function CustomersPage() {
   const qc = useQueryClient();
@@ -37,7 +37,7 @@ export default function CustomersPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (body: Omit<typeof emptyForm, "vehicles"> & { vehicles?: Array<{ licensePlate: string; brand: string; model: string; year?: number; mileage?: number }> }) =>
+    mutationFn: (body: Omit<typeof emptyForm, "vehicles"> & { vehicles?: Array<{ licensePlate: string; vin?: string; brand: string; model: string; year?: number; mileage?: number }> }) =>
       editing
         ? api(`/customers/${editing.id}`, { method: "PUT", body: JSON.stringify(body) })
         : api("/customers", { method: "POST", body: JSON.stringify(body) }),
@@ -54,6 +54,7 @@ export default function CustomersPage() {
         body: JSON.stringify({
           customerId,
           licensePlate: vform.licensePlate.trim(),
+          ...(vform.vin.trim() ? { vin: vform.vin.trim() } : {}),
           brand: vform.brand.trim(),
           model: vform.model.trim(),
           ...(vform.year ? { year: Number(vform.year) } : {}),
@@ -195,9 +196,12 @@ export default function CustomersPage() {
                   const setV = (key: keyof typeof emptyVehicleRow) => (e: { target: { value: string } }) =>
                     setForm((f) => ({ ...f, vehicles: f.vehicles.map((row, j) => (j === i ? { ...row, [key]: e.target.value } : row)) }));
                   return (
-                    <div key={i} className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
+                    <div key={i} className="grid grid-cols-2 md:grid-cols-7 gap-3 items-end">
                       <Field label={i === 0 ? "Kennzeichen" : ""}>
                         <Input value={v.plate} onChange={setV("plate")} placeholder="SH 123 456" />
+                      </Field>
+                      <Field label={i === 0 ? "VIN" : ""}>
+                        <Input value={v.vin} onChange={setV("vin")} placeholder="17-stellig" maxLength={32} className="font-mono text-xs" />
                       </Field>
                       <BrandField value={v.brand} onChange={(val) => setForm((f) => ({ ...f, vehicles: f.vehicles.map((row, j) => (j === i ? { ...row, brand: val } : row)) }))} required={active} />
                       <ModelField brand={v.brand} value={v.model} onChange={(val) => setForm((f) => ({ ...f, vehicles: f.vehicles.map((row, j) => (j === i ? { ...row, model: val } : row)) }))} required={active} />
@@ -237,6 +241,7 @@ export default function CustomersPage() {
         <form onSubmit={(e) => { e.preventDefault(); vehicleMutation.mutate(vehicleModalFor!.id); }}>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Kennzeichen"><Input value={vform.licensePlate} onChange={setV("licensePlate")} required placeholder="SH 123 456" /></Field>
+            <Field label="VIN (Fahrgestellnummer)"><Input value={vform.vin} onChange={setV("vin")} placeholder="17-stellig" maxLength={32} className="font-mono text-xs" /></Field>
             <BrandField value={vform.brand} onChange={(v) => setVform((f) => ({ ...f, brand: v }))} required />
             <ModelField brand={vform.brand} value={vform.model} onChange={(v) => setVform((f) => ({ ...f, model: v }))} required />
             <Field label="Jahr"><Input type="number" value={vform.year} onChange={setV("year")} min={1950} max={2100} /></Field>

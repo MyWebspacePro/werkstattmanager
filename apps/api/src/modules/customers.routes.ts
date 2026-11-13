@@ -6,6 +6,7 @@ import { authGuard } from "../plugins/auth.js";
 
 const vehicleInputSchema = z.object({
   licensePlate: z.string().trim().min(1),
+  vin: z.string().trim().max(32).optional(),
   brand: z.string().trim().min(1),
   model: z.string().trim().min(1),
   year: z.coerce.number().int().min(1950).max(2100).optional(),
@@ -55,6 +56,9 @@ function buildWhere(q?: string, archived = "false") {
       { email: { contains: q, mode: "insensitive" } },
       { phone: { contains: q, mode: "insensitive" } },
       { city: { contains: q, mode: "insensitive" } },
+      // Auch über Fahrzeug-Kennzeichen und VIN suchen.
+      { vehicles: { some: { licensePlate: { contains: q, mode: "insensitive" } } } },
+      { vehicles: { some: { vin: { contains: q, mode: "insensitive" } } } },
     ];
   }
   return where;

@@ -7,6 +7,7 @@ import { computeTotals } from "../lib/money.js";
 
 const loanerSchema = z.object({
   plate: z.string().min(2),
+  vin: z.string().trim().max(32).optional(),
   brand: z.string().min(1),
   model: z.string().min(1),
   dailyRate: z.coerce.number().min(0).default(40),

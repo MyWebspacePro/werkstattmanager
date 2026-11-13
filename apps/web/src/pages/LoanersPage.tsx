@@ -25,7 +25,7 @@ export default function LoanersPage() {
   const [returnLoanId, setReturnLoanId] = useState<string | null>(null);
   const [returnOdo, setReturnOdo] = useState(0);
   const [msg, setMsg] = useState<string | null>(null);
-  const [loanerForm, setLoanerForm] = useState({ plate: "", brand: "", model: "", dailyRate: 40 });
+  const [loanerForm, setLoanerForm] = useState({ plate: "", vin: "", brand: "", model: "", dailyRate: 40 });
   const [loanForm, setLoanForm] = useState({ customerId: "", orderId: "", dueAt: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10) });
 
   const { data: loaners, error } = useQuery({ queryKey: ["loaners"], queryFn: () => api<Loaner[]>("/loaners") });
@@ -102,6 +102,7 @@ export default function LoanersPage() {
         {addMutation.error && <ErrorMsg error={addMutation.error} />}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Kontrollschild"><Input value={loanerForm.plate} onChange={(e) => setLoanerForm((f) => ({ ...f, plate: e.target.value }))} /></Field>
+          <Field label="VIN"><Input value={loanerForm.vin} onChange={(e) => setLoanerForm((f) => ({ ...f, vin: e.target.value }))} placeholder="17-stellig" maxLength={32} className="font-mono text-xs" /></Field>
           <Field label="Marke"><Input value={loanerForm.brand} onChange={(e) => setLoanerForm((f) => ({ ...f, brand: e.target.value }))} /></Field>
           <Field label="Modell"><Input value={loanerForm.model} onChange={(e) => setLoanerForm((f) => ({ ...f, model: e.target.value }))} /></Field>
           <Field label="Tagespauschale CHF"><Input type="number" value={loanerForm.dailyRate} onChange={(e) => setLoanerForm((f) => ({ ...f, dailyRate: Number(e.target.value) }))} /></Field>
