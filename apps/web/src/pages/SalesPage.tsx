@@ -122,7 +122,7 @@ export default function SalesPage() {
           <BrandField value={form.brand} onChange={(v) => setForm((f) => ({ ...f, brand: v }))} />
           <ModelField brand={form.brand} value={form.model} onChange={(v) => setForm((f) => ({ ...f, model: v }))} />
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Jahrgang"><Input type="number" value={form.year} onChange={(e) => setForm((f) => ({ ...f, year: e.target.value }))} /></Field>
+            <Field label="1. Inv."><Input type="number" value={form.year} onChange={(e) => setForm((f) => ({ ...f, year: e.target.value }))} placeholder="2016" /></Field>
             <Field label="KM"><Input type="number" value={form.mileage} onChange={(e) => setForm((f) => ({ ...f, mileage: e.target.value }))} /></Field>
           </div>
           <Field label="VIN"><Input value={form.vin} onChange={(e) => setForm((f) => ({ ...f, vin: e.target.value }))} /></Field>

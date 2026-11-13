@@ -82,7 +82,7 @@ export default function VehicleDetailPage() {
       <Card title="Fahrzeugdaten">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
           <div><span className="text-slate-500">KM-Stand:</span> {v.mileage?.toLocaleString("de-CH") ?? "—"}</div>
-          <div><span className="text-slate-500">Jahr:</span> {v.year ?? "—"}</div>
+          <div><span className="text-slate-500">1. Inv.:</span> {v.year ?? "—"}</div>
           <div><span className="text-slate-500">Treibstoff:</span> {v.fuel ?? "—"}</div>
           <div><span className="text-slate-500">VIN:</span> {v.vin ?? "—"}</div>
         </div>
@@ -151,7 +151,7 @@ export default function VehicleDetailPage() {
           <Field label="Kennzeichen"><Input value={form.licensePlate} onChange={set("licensePlate")} required /></Field>
           <BrandField value={form.brand} onChange={(v2) => setForm((f) => ({ ...f, brand: v2 }))} required />
           <ModelField brand={form.brand} value={form.model} onChange={(v2) => setForm((f) => ({ ...f, model: v2 }))} required />
-          <Field label="Jahr"><Input type="number" value={form.year} onChange={set("year")} min={1950} max={2100} /></Field>
+          <Field label="1. Inv. (Erstinverkehrsetzung)"><Input type="number" value={form.year} onChange={set("year")} min={1950} max={2100} placeholder="2016" /></Field>
           <Field label="KM-Stand"><Input type="number" value={form.mileage} onChange={set("mileage")} min={0} /></Field>
           <Field label="Treibstoff"><Input value={form.fuel} onChange={set("fuel")} placeholder="Benzin / Diesel / Elektro…" /></Field>
           <Field label="VIN"><Input value={form.vin} onChange={set("vin")} /></Field>

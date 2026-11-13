@@ -206,7 +206,7 @@ export default function CustomersPage() {
                       </Field>
                       <BrandField value={v.brand} onChange={(val) => setForm((f) => ({ ...f, vehicles: f.vehicles.map((row, j) => (j === i ? { ...row, brand: val } : row)) }))} required={active} />
                       <ModelField brand={v.brand} value={v.model} onChange={(val) => setForm((f) => ({ ...f, vehicles: f.vehicles.map((row, j) => (j === i ? { ...row, model: val } : row)) }))} required={active} />
-                      <Field label={i === 0 ? "Jahr" : ""}><Input type="number" value={v.year} onChange={setV("year")} min={1950} max={2100} /></Field>
+                      <Field label={i === 0 ? "1. Inv." : ""}><Input type="number" value={v.year} onChange={setV("year")} min={1950} max={2100} placeholder="2016" /></Field>
                       <Field label={i === 0 ? "KM-Stand" : ""}><Input type="number" value={v.mileage} onChange={setV("mileage")} min={0} /></Field>
                       <Button type="button" variant="ghost" className="justify-center" onClick={() => setForm((f) => ({ ...f, vehicles: f.vehicles.filter((_, j) => j !== i) }))} disabled={form.vehicles.length === 1}>✕</Button>
                     </div>
@@ -245,7 +245,7 @@ export default function CustomersPage() {
             <Field label="VIN (Fahrgestellnummer)"><Input value={vform.vin} onChange={setV("vin")} placeholder="17-stellig" maxLength={32} className="font-mono text-xs" /></Field>
             <BrandField value={vform.brand} onChange={(v) => setVform((f) => ({ ...f, brand: v }))} required />
             <ModelField brand={vform.brand} value={vform.model} onChange={(v) => setVform((f) => ({ ...f, model: v }))} required />
-            <Field label="Jahr"><Input type="number" value={vform.year} onChange={setV("year")} min={1950} max={2100} /></Field>
+            <Field label="1. Inv. (Erstinverkehrsetzung)"><Input type="number" value={vform.year} onChange={setV("year")} min={1950} max={2100} placeholder="2016" /></Field>
             <Field label="KM-Stand"><Input type="number" value={vform.mileage} onChange={setV("mileage")} min={0} /></Field>
           </div>
           <div className="flex gap-3 mt-6">
