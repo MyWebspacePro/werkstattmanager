@@ -131,7 +131,7 @@ async function main() {
   }
 
   // Werkstattzeiten für die Slot-Suche
-  await prisma.setting.update({ where: { id: 1 }, data: { shopStartMin: 7 * 60 + 30, shopEndMin: 17 * 60 + 30, saturdayOpen: true } });
+  await prisma.setting.update({ where: { id: 1 }, data: { shopStartMin: 7 * 60 + 30, shopEndMin: 18 * 60, saturdayOpen: true } });
 
   // ── 20 Kunden mit Fahrzeugen (Region Schaffhausen) ─────────────────────────
   const kunden: Array<{

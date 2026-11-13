@@ -35,6 +35,7 @@ const settingsSchema = z.object({
   shopStartMin: z.coerce.number().int().min(0).max(1440).default(420),
   shopEndMin: z.coerce.number().int().min(0).max(1440).default(1080),
   saturdayOpen: z.boolean().default(false),
+  usualBrands: z.array(z.string().min(1).max(60)).max(200).default([]),
 });
 
 async function getSettings() {

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
 import { Button, Card, ErrorMsg, Field, Input, Select, Textarea } from "../components/ui.js";
 import { WorkTypeAdmin, type WorkType } from "../components/WorkTypeAdmin.js";
+import { BRAND_CATALOG } from "../components/VehicleInputs.js";
 import { useAuth } from "../lib/auth.js";
 
 interface AppUser {
@@ -165,6 +166,7 @@ interface Settings {
   reminderFee1: string; reminderFee2: string; reminderFee3: string;
   invoiceFooter: string;
   shopStartMin: number; shopEndMin: number; saturdayOpen: boolean;
+  usualBrands: string[];
 }
 
 export default function SettingsPage() {
@@ -174,7 +176,7 @@ export default function SettingsPage() {
   const [form, setForm] = useState<Settings | null>(null);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => { if (data) setForm(data); }, [data]);
+  useEffect(() => { if (data) setForm({ ...data, usualBrands: data.usualBrands ?? [] }); }, [data]);
 
   const mutation = useMutation({
     mutationFn: (body: Settings) => api("/settings", { method: "PUT", body: JSON.stringify(body) }),
@@ -242,6 +244,8 @@ export default function SettingsPage() {
           </div>
           <p className="mt-2 text-xs text-slate-500">Grundlage der Slot-Suche im Planer. Kapazität pro Mitarbeiter: «Arbeitsplätze verwalten» im Planer.</p>
         </Card>
+
+        {user?.role === "ADMIN" && <BrandsCard value={form.usualBrands} onChange={(usualBrands) => setForm({ ...form, usualBrands })} />}
 
         <Card title="Zahlungsverkehr (QR-Rechnung)">
           <div className="grid grid-cols-2 gap-4">
@@ -318,6 +322,58 @@ function WorkTypesCard() {
         onClose={() => setAdminOpen(false)}
         onChanged={() => qc.invalidateQueries({ queryKey: ["worktypes"] })}
       />
+    </Card>
+  );
+}
+
+/**
+ * Marken-Katalog: der Betrieb bestimmt, welche Marken im Fahrzeug-Dropdown
+ * oben stehen («üblich») und welche nur unter «Weitere Marken» erscheinen.
+ * Leer = der Standardkatalog aus VehicleInputs (inkl. E-Marken).
+ */
+function BrandsCard({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const selected = new Set(value);
+  const toggle = (b: string) => {
+    const next = new Set(selected);
+    if (next.has(b)) next.delete(b);
+    else next.add(b);
+    onChange([...next]);
+  };
+  return (
+    <Card
+      title="Marken (Fahrzeug-Erfassung)"
+      actions={
+        value.length > 0 ? (
+          <Button type="button" variant="ghost" onClick={() => onChange([])}>Standard wiederherstellen</Button>
+        ) : undefined
+      }
+    >
+      <p className="text-sm text-slate-600 mb-3">
+        Gewählte Marken stehen im Dropdown unter <b>«Übliche Marken»</b> oben. Nicht gewählte erscheinen unter
+        «Weitere Marken». Eigene Erfassungen aus dem Fahrzeugbestand kommen immer dazu. Ohne Auswahl gilt der
+        mitgelieferte Standardkatalog.
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {[...BRAND_CATALOG.usual, ...BRAND_CATALOG.other].map((b) => (
+          <button
+            key={b}
+            type="button"
+            onClick={() => toggle(b)}
+            className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+              selected.has(b)
+                ? "border-blue-500 bg-blue-50 text-blue-700"
+                : "border-slate-200 bg-white text-slate-600 hover:border-slate-400"
+            }`}
+          >
+            {selected.has(b) ? "✓ " : ""}{b}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-slate-500">
+        {value.length === 0
+          ? "Kein eigener Katalog — es gilt der Standard (17 übliche Marken, 40 weitere)."
+          : `${value.length} Marke(n) als «üblich» markiert.`}
+      </p>
     </Card>
   );
 }

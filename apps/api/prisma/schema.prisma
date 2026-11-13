@@ -95,6 +95,10 @@ model Setting {
   shopStartMin      Int      @default(420) // 07:00
   shopEndMin        Int      @default(1080) // 18:00
   saturdayOpen      Boolean  @default(false)
+  // Marken-Katalog für das Fahrzeug-Dropdown: Gruppe 1 = übliche Marken im
+  // Betrieb (stehen oben), Gruppe 2 = weitere Auswahl. Leer = der in
+  // VehicleInputs hinterlegte Standardkatalog.
+  usualBrands       String[] @default([])
   updatedAt         DateTime @updatedAt
 }
 
