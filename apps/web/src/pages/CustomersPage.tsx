@@ -93,6 +93,7 @@ export default function CustomersPage() {
           .filter((v) => v.plate.trim())
           .map((v) => ({
             licensePlate: v.plate.trim(),
+            ...(v.vin.trim() ? { vin: v.vin.trim() } : {}),
             brand: v.brand.trim(),
             model: v.model.trim(),
             ...(v.year ? { year: Number(v.year) } : {}),
