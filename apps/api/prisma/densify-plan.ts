@@ -232,7 +232,6 @@ async function main() {
   for (let d = FROM!; d <= TO!; d = addZonedDays(d, 1)) days.push(d);
 
   let created = 0;
-  let skippedNoRes = 0;
   const perMechanic = new Map<string, number>();
 
   for (const dayKey of days) {
@@ -246,94 +245,105 @@ async function main() {
     const budget = (dow === 6 ? 0.5 : 0.88) * windowMin;
     const lunch: Span | null = dow === 6 ? null : { s: 720, e: 765 }; // Mittagspause
 
-    for (const st of stations) {
-      let guard = 0;
-      while (guard++ < 60) {
+    // Round-robin über die Stationen: jede bekommt reihum einen Termin, bis sie
+    // ihr Budget erreicht hat. So läuft nicht die erste Station die Mechaniker
+    // leer, während die übrigen Stationen ungenutzt bleiben.
+    let progressed = true;
+    let guard = 0;
+    while (progressed && guard++ < 60) {
+      progressed = false;
+      for (const st of stations) {
         const cur = load(st.id, dayKey);
-        if (cur >= budget) break;
+        if (cur >= budget) continue;
         const blocked = merge([...(busy.get(`${st.id}|${dayKey}`) ?? []), ...(lunch ? [lunch] : [])]);
-        // erste Lücke ≥ 30 Min im Tagesfenster suchen
+
+        // Alle Lücken ≥ 30 Min im Tagesfenster, größte zuerst — kleine Restlücken
+        // dürfen die Suche nicht blockieren.
+        const gaps: Span[] = [];
         let cursor = winStart;
-        let gap: Span | null = null;
         for (const g of blocked) {
-          if (g.s - cursor >= 30) { gap = { s: cursor, e: g.s }; break; }
+          if (g.s - cursor >= 30) gaps.push({ s: cursor, e: g.s });
           cursor = Math.max(cursor, g.e);
         }
-        if (!gap && winEnd - cursor >= 30) gap = { s: cursor, e: winEnd };
-        if (!gap) break;
-        const freeLen = gap.e - gap.s;
+        if (winEnd - cursor >= 30) gaps.push({ s: cursor, e: winEnd });
+        gaps.sort((a, b) => (b.e - b.s) - (a.e - a.s) || a.s - b.s);
 
-        const fitting = workTypes.filter(
-          (w) =>
-            w.defaultMinutes <= freeLen &&
-            w.defaultMinutes >= Math.min(30, freeLen) &&
-            cur + w.defaultMinutes <= Math.max(budget, cur + 45),
-        );
-        if (fitting.length === 0) break;
-        const wt = pickWeighted(fitting);
-        const dur = wt.defaultMinutes;
-        // natürlicher Versatz in grossen Lücken, damit nichts wie gestempelt wirkt
-        let t0 = gap.s;
-        if (freeLen - dur >= 45 && rnd() < 0.35) t0 += 15 * Math.floor(rnd() * 3);
-        t0 = Math.min(t0, gap.e - dur);
+        // Erste Lücke, in die ein Job passt und in der ein Mechaniker frei ist.
+        for (const gap of gaps) {
+          const freeLen = gap.e - gap.s;
+          const fitting = workTypes.filter(
+            (w) =>
+              w.defaultMinutes <= freeLen &&
+              w.defaultMinutes >= Math.min(30, freeLen) &&
+              cur + w.defaultMinutes <= Math.max(budget, cur + 45),
+          );
+          if (fitting.length === 0) continue;
+          const wt = pickWeighted(fitting);
+          const dur = wt.defaultMinutes;
+          // natürlicher Versatz in grossen Lücken, damit nichts wie gestempelt wirkt
+          let t0 = gap.s;
+          if (freeLen - dur >= 45 && rnd() < 0.35) t0 += 15 * Math.floor(rnd() * 3);
+          t0 = Math.min(t0, gap.e - dur);
 
-        // Mechaniker: qualifiziert, frei, Tagesbudget reicht; Grossjobs nicht auf Lernende
-        const pool = mechanics.filter(
-          (m) =>
-            (m.skillLevel ?? 0) >= wt.requiredSkill &&
-            isFree(m.id, dayKey, t0, t0 + dur) &&
-            load(m.id, dayKey) + dur <= (m.workMinutesPerDay ?? 510) - 15 &&
-            (!isApprentice(m) || dur <= 90),
-        );
-        const candidates = pool.length
-          ? pool
-          : mechanics.filter((m) => (m.skillLevel ?? 0) >= wt.requiredSkill && isFree(m.id, dayKey, t0, t0 + dur));
-        if (candidates.length === 0) { skippedNoRes++; break; }
-        const scored = candidates.map((m) => {
-          let sc = 0;
-          if (PREFERENCE_RULES.some((r) => r.match.test(wt.name) && r.prefer.test(m.jobTitle ?? ""))) sc += 25;
-          if ((m.skillLevel ?? 0) === wt.requiredSkill) sc += 12;
-          sc -= load(m.id, dayKey) / 40;
-          if (isApprentice(m) && dur > 90) sc -= 30;
-          return { m, sc };
-        });
-        scored.sort((a, b) => b.sc - a.sc || a.m.name.localeCompare(b.m.name, "de"));
-        const mech = scored[0].m;
+          // Mechaniker: qualifiziert, frei, Tagesbudget reicht; Grossjobs nicht auf Lernende
+          const pool = mechanics.filter(
+            (m) =>
+              (m.skillLevel ?? 0) >= wt.requiredSkill &&
+              isFree(m.id, dayKey, t0, t0 + dur) &&
+              load(m.id, dayKey) + dur <= (m.workMinutesPerDay ?? 510) - 15 &&
+              (!isApprentice(m) || dur <= 90),
+          );
+          const candidates = pool.length
+            ? pool
+            : mechanics.filter((m) => (m.skillLevel ?? 0) >= wt.requiredSkill && isFree(m.id, dayKey, t0, t0 + dur));
+          if (candidates.length === 0) continue;
+          const scored = candidates.map((m) => {
+            let sc = 0;
+            if (PREFERENCE_RULES.some((r) => r.match.test(wt.name) && r.prefer.test(m.jobTitle ?? ""))) sc += 25;
+            if ((m.skillLevel ?? 0) === wt.requiredSkill) sc += 12;
+            sc -= load(m.id, dayKey) / 40;
+            if (isApprentice(m) && dur > 90) sc -= 30;
+            return { m, sc };
+          });
+          scored.sort((a, b) => b.sc - a.sc || a.m.name.localeCompare(b.m.name, "de"));
+          const mech = scored[0].m;
 
-        // freies Fahrzeug (rotierend durch den Bestand)
-        let veh: Veh | undefined;
-        for (let i = 0; i < vehicles.length; i++) {
-          const cand = vehicles[(created + i) % vehicles.length];
-          if (isFree(`veh:${cand.id}`, dayKey, t0, t0 + dur)) { veh = cand; break; }
+          // freies Fahrzeug (rotierend durch den Bestand)
+          let veh: Veh | undefined;
+          for (let i = 0; i < vehicles.length; i++) {
+            const cand = vehicles[(created + i) % vehicles.length];
+            if (isFree(`veh:${cand.id}`, dayKey, t0, t0 + dur)) { veh = cand; break; }
+          }
+          if (!veh) continue;
+
+          const status = statusFor(dayKey, t0, t0 + dur);
+          await prisma.appointment.create({
+            data: {
+              customerId: veh.customerId,
+              vehicleId: veh.id,
+              resourceId: st.id,
+              mechanicId: mech.id,
+              start: zonedMake(dayKey, t0),
+              end: zonedMake(dayKey, t0 + dur),
+              status,
+              requiredSkill: wt.requiredSkill,
+              reason: wt.name,
+            },
+          });
+          addBusy(st.id, dayKey, t0, t0 + dur);
+          addBusy(mech.id, dayKey, t0, t0 + dur);
+          addBusy(`veh:${veh.id}`, dayKey, t0, t0 + dur);
+          perMechanic.set(mech.id, (perMechanic.get(mech.id) ?? 0) + dur);
+          created++;
+          progressed = true;
+          break;
         }
-        if (!veh) { skippedNoRes++; break; }
-
-        const status = statusFor(dayKey, t0, t0 + dur);
-        await prisma.appointment.create({
-          data: {
-            customerId: veh.customerId,
-            vehicleId: veh.id,
-            resourceId: st.id,
-            mechanicId: mech.id,
-            start: zonedMake(dayKey, t0),
-            end: zonedMake(dayKey, t0 + dur),
-            status,
-            requiredSkill: wt.requiredSkill,
-            reason: wt.name,
-          },
-        });
-        addBusy(st.id, dayKey, t0, t0 + dur);
-        addBusy(mech.id, dayKey, t0, t0 + dur);
-        addBusy(`veh:${veh.id}`, dayKey, t0, t0 + dur);
-        perMechanic.set(mech.id, (perMechanic.get(mech.id) ?? 0) + dur);
-        created++;
       }
     }
   }
 
   console.log(`✓ Demokunden angelegt: ${customersAdded}`);
   console.log(`✓ Neue Termine: ${created}`);
-  if (skippedNoRes) console.log(`– ohne freie Ressource übersprungen: ${skippedNoRes}`);
   if (retro) console.log(`✓ Vergangene Termine auf DONE/IN_PROGRESS gesetzt: ${retro}`);
   const names = new Map(mechanics.map((m) => [m.id, m.name]));
   console.log("— Mechaniker-Belastung im Zeitraum (neu dazu):");
