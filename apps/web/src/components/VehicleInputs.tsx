@@ -53,8 +53,13 @@ export function BrandField({ value, onChange, required = false, disabled = false
 
   const own = [...new Set((fleet?.items ?? []).map((v) => v.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b, "de-CH"));
   const custom = settings?.usualBrands ?? [];
+  // Eigene Auswahl bestimmt Gruppe 1. Nicht gewählte Standardmarken bleiben als
+  // «Weitere Marken» erhalten — sie verschwinden nicht, sie rutschen nur nach unten.
   const catalog = custom.length > 0
-    ? { usual: [...new Set(custom)].sort((a, b) => a.localeCompare(b, "de-CH")), other: [] as string[] }
+    ? {
+        usual: [...new Set(custom)].sort((a, b) => a.localeCompare(b, "de-CH")),
+        other: [...new Set([...BRAND_CATALOG.other, ...BRAND_CATALOG.usual])].sort((a, b) => a.localeCompare(b, "de-CH")),
+      }
     : BRAND_CATALOG;
 
   const lower = (s: string) => s.trim().toLowerCase();
